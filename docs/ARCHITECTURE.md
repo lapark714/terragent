@@ -138,3 +138,27 @@ fields is fine). Other modules import them freely.
 - Tests: `npm test` (no network, no keys). Live tests are `*.live.test.ts`, run with `npm run test:live`.
 - Before deploy, agents can't reach the MCP server; scripts can still drive Naïve directly (create agents,
   run a session, run the pipeline in a computer).
+
+## 10. Pipeline CLI contract (core ↔ imagery ↔ Analytics agent)
+
+The Analytics agent runs, inside its Naïve computer:
+
+```bash
+# get_analysis_job returns bundle_file_id + these commands; the agent fetch_file()s the bundle to ~/bundle.tgz
+mkdir -p ~/tg && tar -xzf ~/bundle.tgz -C ~/tg && bash ~/tg/pipeline/bootstrap.sh     # idempotent; prints "ready"
+~/tg/pipeline/.venv/bin/python -m terragent_pipeline.run --job ~/job.json --out ~/out/<request_id>
+```
+
+- `job.json` (written by the agent from `get_analysis_job.job`):
+  `{ request_id, recipe, bbox: [minLon,minLat,maxLon,maxLat], before_window: {start,end}|null,
+     after_window: {start,end}, before_scene: SceneRef|null, after_scene: SceneRef|null,
+     max_cloud_pct, h3_res, collection: "sentinel-2-l2a" }`
+  Scenes may be null → the pipeline searches itself.
+- stdout: one line of JSON = `AnalysisResult` (src/lib/domain.ts), also written to `<out>/result.json`.
+  Image paths in it are relative to `<out>`; the agent `publish_file`s each and passes
+  `{ "<path>": "fil_…" }` to `save_analysis`.
+- Exit code 0 on success (even "no clear scene" — then `warnings` explains and indices may be empty);
+  non-zero only for crashes. Must finish a 2×2 km before/after job in < 60 s on 1 vCPU.
+- `bootstrap.sh` finds/installs Python ≥ 3.12 (uses `uv` if the system Python is older), creates
+  `pipeline/.venv`, installs `requirements.txt`, and is safe to re-run (12 h computer lifetime).
+- Locally: `npm run pipeline -- --job job.json --out tmp/out` (wraps the same CLI) for tests and the simulator.
