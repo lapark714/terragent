@@ -1,0 +1,140 @@
+# Terragent architecture (build contract)
+
+Spec: [terragent-master-prompt.md](../terragent-master-prompt.md). Verified platform facts: [docs/platform/](platform/).
+Decisions log: [NOTES.md](../NOTES.md). This file is how the pieces fit; if you change a seam, update it here.
+
+## 1. Shape of the system
+
+```
+                    ┌──────────────── Naïve (api.vetta.sh) ─────────────────┐
+ customer ─ email ─▶│  AgentMail ──webhook──▶                                │
+ portal / API  ────▶│        Next.js on Vercel (this repo)                   │
+                    │   • /api/mcp  Terragent MCP gateway  ◀── agents call ──┤  12 agents, one team
+                    │   • webhooks  (AgentMail, Naïve)                       │  coordinator + board
+                    │   • portal, /answer API, dashboard, report pages       │  cron deployments
+                    │          │                                             │  Analytics computer
+                    │          ▼                                             │  (Python pipeline)
+                    │   Neon Postgres  (requests, events, decisions, index…) │
+                    └────────────────────────────────────────────────────────┘
+```
+
+- **Agents never hold third-party keys.** Naïve's vault can only inject a bearer into an MCP connection
+  (`env_var` injection returns 501), AgentMail's MCP wants `x-api-key` (forbidden inline) and Monid's MCP is
+  OAuth-only. So our **Terragent MCP server is the single gateway**: it holds `DATABASE_URL`,
+  `AGENTMAIL_API_KEY`, `MONID_API_KEY` in Vercel env and exposes narrow tools ([catalog](../src/lib/mcp/catalog.ts)).
+- **One bearer token per agent.** Provisioning mints a token per agent, stores its sha256 in `mcp_tokens`, and
+  vaults the raw token as a `static_bearer` credential **bound to that agent** (`agent_id`) for the exact MCP URL.
+  The server maps token → agent and refuses tools the catalog doesn't grant that agent.
+- **Agents need a public URL.** Naïve refuses localhost/private MCP and webhook URLs, so end-to-end agent runs
+  start after the first deploy (founder approval required). Everything else is testable locally.
+
+## 2. Two lanes
+
+| Lane | Used for | Mechanism | Why |
+|---|---|---|---|
+| **inbound** (`priority='inbound'`) | portal, email, API, live demo | `handoff` starts the next agent's session directly (`sessions.create`) and **mirrors** a board card with status `doing` (visible, wakes nobody) | Board runs one card per assignee at a time; a judge's request must not queue behind overnight samples. Target: ~2 min end to end. |
+| **background** (`priority='background'`) | signal-engine free samples, monitors, follow-ups | `handoff` creates a `todo` card **with assignee** on the coordinator's board → Naïve wakes the agent | Naïve-native team + board; serialisation is fine overnight. |
+
+Both lanes write the same `requests.status/owner_agent/stage`, `events`, and board card, so the dashboard
+and the Naïve board show the same truth.
+
+## 3. Inbound flow (spec §3.2)
+
+| # | Agent | Reads | Writes (MCP tools) | Next |
+|---|---|---|---|---|
+| 0 | — (portal / webhook / API) | | `startInboundRequest()` → request `received` | comms-customer |
+| 1 | **comms-customer** (Comms 2) | `get_request`, `get_thread` | `record_screening` (refusals logged as `screening` decisions); `send_customer_message` if unclear | planner (or stop) |
+| 2 | **planner** (Brain 1) | `geocode`, `earth_index_lookup`, `search_free_scenes` | `save_data_spec` | acquisition |
+| 3 | **acquisition** (Orchestrator) | `search_free_scenes`, `list_providers`, SkyWatch MCP pricing | `log_decision` (source_selection, free_vs_paid), `save_acquisition_plan`; if paid would help: `request_supplier_quote`, `prepare_paid_order` (held), `place_paid_order` (**ask**) | pricing |
+| 4 | **pricing** | `estimate_costs`, `list_providers` | `create_quote` (auto-approved ≤ cap) | analytics if auto-approved, else comms-customer (`send_quote`) |
+| 5 | **analytics** | `get_analysis_job` | runs pipeline in its computer; `publish_file`; `save_analysis` (→ Earth index) | interpreter |
+| 6 | **interpreter** (Brain 2) | `get_analysis`, `earth_index_lookup`, `view_image` | `save_report_draft`, `check_report_rules` | verifier |
+| 7 | **verifier** | `get_report`, `get_analysis`, `check_report_rules`, `view_image` | `save_verdict` (fail → interpreter, max 2 revisions) | comms-customer |
+| 8 | **comms-customer** | `get_report` | `deliver_report` (same thread, images + link), optional `create_monitor` | done |
+
+Free samples (signal engine) enter at step 2 with `is_free_sample=true`, skip screening/quote, and step 8
+becomes **comms-outreach**.
+
+## 4. Outbound flow (spec §3.3) and outreach channels
+
+1. **sourcing** on cron (`loose` window): `poll_signals` per playbook → match affected businesses (Naïve data
+   tools + `monid_run`, allowlisted, capped) → `create_prospect` (fit × urgency × ability × reach) →
+   `request_free_sample` for the top N weighted by `get_allocation`.
+2. Pipeline steps 2–7 on the background lane.
+3. **comms-outreach**: `get_outreach_context` picks the channel (NOTES "Outbound channel"):
+   - `contact_form` (cold, default): the business's own website contact form via the Naïve `browser` tool
+     (`solve_captchas: false`, `stealth: false`), reply-to hello@ → `record_contact_form_touch`.
+   - `email_warm`: `send_outreach_email` to people who wrote to us / attendees.
+   - `email_direct`: only when `OUTREACH_DIRECT_EMAIL_APPROVED=true`.
+   Every touch: their asset's image + one finding, next step + price, sender identity, **AI disclosure**,
+   opt-out link. Sends are blocked until a founder approves the template and arms the inbox.
+4. Replies arrive at hello@ (AgentMail webhook) → matched to the prospect → comms-customer quotes and sells.
+5. **coordinator** on cron: `get_metrics` → `set_playbook_allocation` (logged as a decision with metrics).
+6. **analytics** on cron: `list_due_monitors` → re-check → `record_monitor_check` → follow-up with new info.
+
+## 5. Safety rules enforced in code (not only prompts)
+
+| Rule (spec) | Where |
+|---|---|
+| First outbound email needs a founder | `settings.email.inbox_armed[inbox]` false → `sendEmail` blocks (except `TEAM_EMAILS`) |
+| Outreach template approved first | `templates.status='approved'` required for `kind='outreach'` |
+| Never buy data without a founder | `place_paid_order` is Naïve `ask`; even when allowed it only records approval — a founder buys by hand |
+| Opt-outs | `suppression` checked before every send; `/unsubscribe?t=<token>` + "stop" replies |
+| Misuse | `record_screening` refusals; refused requests can't advance (`handoff` rejects) |
+| No CAPTCHA solving | outreach agent browser config `solve_captchas:false`, `stealth:false` |
+| Derived results only | Earth index stores metrics; paid imagery never stored or emailed |
+| Spend caps | Naïve budgets per agent (`src/lib/config.ts`), per-session `budget_micro_usd`, Monid caps in our wrapper |
+| Deployed key can't charge the card | app refuses a Naïve key whose `/v1/me` scopes include `admin` or `billing:write` when `VERCEL_ENV` is set |
+
+## 6. Module ownership (parallel build)
+
+| Module | Owner | Files |
+|---|---|---|
+| Imagery pipeline | imagery | `pipeline/**` (Python), `src/lib/imagery/**` |
+| Signals, geocoding, Monid | signals | `src/lib/signals/**`, `src/lib/geo/geocode.ts`, `src/lib/monid/**` |
+| Naïve platform + agents | naive | `naive/**`, `src/lib/naive/**`, `scripts/provision-naive.ts`, `scripts/naive-*.ts` |
+| Core pipeline + MCP | core | `src/lib/pipeline/**`, `src/lib/mcp/server.ts`, `src/lib/mcp/tools/{core,planning,acquisition,suppliers,pricing,analysis,reports,customer}.ts`, `src/app/api/mcp/**`, `db/seeds/**` |
+| Outbound services + MCP | outbound | `src/lib/outbound/**`, `src/lib/mcp/tools/{signals,prospects,outreach,coordinator,monitoring,market}.ts` |
+| Email | email | `src/lib/email/**`, `src/lib/agentmail/**`, `src/app/api/webhooks/agentmail/**`, `src/app/unsubscribe/**`, `scripts/provision-agentmail*.ts` |
+| Web | web | `src/app/**` except the routes above, `src/components/**`, `src/lib/dashboard/**`, `src/lib/api-keys/**` |
+
+Shared, already written (change only with care, keep backwards compatible): `src/lib/domain.ts`,
+`src/lib/mcp/catalog.ts`, `src/lib/db/*`, `src/lib/events.ts`, `src/lib/settings.ts`, `src/lib/config.ts`,
+`src/lib/env.ts`, `src/lib/geo/h3.ts`, `src/lib/ids.ts`, `db/migrations/00{1,2}_*.sql`.
+New tables/columns → a new migration file named `0NN_<module>_<what>.sql` (pick a unique number per module:
+imagery 010, signals 020, naive 030, core 040, outbound 050, email 060, web 070).
+
+**Stubs:** files under `src/lib/{imagery,geo,signals,monid,email,naive,pipeline}` contain typed stubs that
+throw "not implemented yet". The owner replaces the body; **keep the exported signatures** (adding optional
+fields is fine). Other modules import them freely.
+
+## 7. MCP tool implementation contract
+
+- `src/lib/mcp/server.ts` (core) exports `registerTool(name, { inputSchema: z.object(...) }, handler)`
+  helpers; each `src/lib/mcp/tools/<group>.ts` exports `register(server)` and implements **exactly** the
+  catalog names of its group. A test asserts every catalog tool is registered exactly once.
+- Handlers receive `ctx = { agent: AgentName, sessionId?: string }` from the auth layer; record
+  `actor = ctx.agent` on every event/decision.
+- Return compact JSON text. Inputs validated with zod (reuse `src/lib/domain.ts` schemas).
+- Tool errors are returned as `{ error: "<reason>" }` results the model can act on, not thrown 500s.
+
+## 8. Naïve specifics builders must respect (from docs/platform)
+
+- SDK `@usenaive-sdk/managed-agents@0.12.3` (ESM). Money = integer micro-USD. `budget.period` required.
+- `harness: "pi"` (structured output, approvals, built-ins). Not `claude_code`.
+- MCP tools default to `ask`: every catalog tool must be listed in `tools.configs` as
+  `"terragent.<name>": { permission }`. `data_run` must be `allow` for sourcing or cron runs park and skip.
+- `mcp_servers: [{ name, url }]` — no `type`, no secret headers.
+- Each agent has ONE computer (12 h max life, then replaced blank) → Analytics bootstraps the pipeline from a
+  Naïve File every run (idempotent).
+- Skills are a single `SKILL.md` text; no scripts. Playbooks: disasters, deforestation, mining, inbound.
+- Webhooks: `Vetta-Signature`/`Vetta-Timestamp` HMAC, 2xx within 10 s, dedupe on envelope `id`.
+- Approvals surface as `session.idle` with `stop_reason: "awaiting_approval"`; list with
+  `sessions.list({ stop_reason: "awaiting_approval" })`, decide with `sessions.confirmTool`.
+
+## 9. Local development
+
+- `npm run db:migrate` / `npm run db:status` — Neon if `DATABASE_URL` is set, else PGlite.
+- Tests: `npm test` (no network, no keys). Live tests are `*.live.test.ts`, run with `npm run test:live`.
+- Before deploy, agents can't reach the MCP server; scripts can still drive Naïve directly (create agents,
+  run a session, run the pipeline in a computer).

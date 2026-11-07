@@ -17,15 +17,16 @@ Verified platform reference: [docs/platform/](docs/platform/README.md).
 | H2 | ~~Create AgentMail API key~~ **Done 2026-11-07**: org-wide "Terragent Key" is in `.env` as `AGENTMAIL_API_KEY`, verified with `GET /v0/inboxes`. | — | — |
 | H2b | ~~Decide the inbox addresses~~ **Done 2026-11-07** (Laurence approved): `terragent@agentmail.to` (hello / Comms 2, display "Terragent"), `terragent-data@agentmail.to` (data / Comms 1, "Terragent Data"), `terragent-outreach@agentmail.to` (outreach / Comms 3, "Terragent Outreach"). All 3 free-plan slots are used. Addresses are in `.env` as `AGENTMAIL_INBOX_HELLO/DATA/OUTREACH`. | — | — |
 | H2c | **Decide whether 100 emails/day is enough.** Free = 100/day for the whole org (all 3 inboxes), about 200 over the hackathon. The goal of 50+ outreach emails plus replies, quotes and deliveries fits, but tightly. Developer plan = 1,000/day and 10 inboxes. Upgrading is a purchase, so it's a founder decision. | whoever holds the AgentMail billing | overnight outreach volume |
-| H2e | **Turn on Agent Armor** (AgentMail console → Features in Labs → Agent Armor; free) so inbound mail gets a prompt-injection verdict before Comms 2 acts on it. Monitor mode is fine to start. | whoever is in the AgentMail console | step 2 (before real inbound mail) |
+| H2e | ~~Turn on Agent Armor~~ **Done and verified 2026-11-07**: the first inbound message (NASA FIRMS email to `terragent-data@`) carries `agent_armor: {status: complete, verdict: clear}`, scanned 2 s after arrival (model `qwen3.8-27b-fp8-choice-v3`). The setting can't be read via API; the per-message `agent_armor` object is the proof. | — | — |
 | H2d | **Put `AGENTMAIL_API_KEY` in the Naïve vault** when agents get the AgentMail MCP (dashboard; humans enter credentials), and in Vercel env vars at deploy. | Naïve org owner / Laurence | step 2 agents, step 7 deploy |
 | H2f | ~~Decide how outbound works~~ **Decided 2026-11-07** (Laurence: outreach is necessary for the sourcing agent). See Decisions. Remaining human step: whoever talks to the AgentMail sponsor asks, in writing, whether direct cold email of "one free, specific analysis of the recipient's own asset, AI-disclosed, opt-out, tiny volume" is acceptable. If yes, set `OUTREACH_DIRECT_EMAIL_APPROVED=true`. | whoever talks to the AgentMail sponsor | direct email channel only |
 | H3 | ~~Create Monid key~~ **Done 2026-11-07**: `MONID_API_KEY` is in `.env`, verified with `monid whoami` (Aiden's workspace). | — | — |
 | H3b | **Load the $20 Monid credits.** The wallet shows **$1.00**, not $20. Redeem the hackathon credit at https://app.monid.ai (only the signup code can be redeemed with an API key; other codes must go through the dashboard). | Aiden (workspace owner) | step 6 contact lookup at any volume |
 | H3c | **Set a Monid workspace budget and per-run cap** in the dashboard (e.g. $18 budget, $0.50 per run) so agents can't drain it. Over-limit runs come back `BLOCKED` and aren't charged. | Aiden | before agents get Monid access |
-| H4 | Create Neon project → pooled `DATABASE_URL` | anyone | deploy; local dev uses PGlite without it |
-| H5 | NASA FIRMS free MAP_KEY → `FIRMS_MAP_KEY` | anyone (1 min, email only) | fire signals |
-| H6 | Global Forest Watch free account + API key → `GFW_API_KEY` | anyone | forest-loss signals |
+| H4 | ~~Create Neon project~~ **Done 2026-11-07 via Claimable Neon** (no account needed): project `cold-sky-31352168`, `aws-us-east-1`, Postgres 17.11, pooled `DATABASE_URL` in `.env` (quoted). **Unclaimed, it expires Tue 2026-11-10 22:50 UTC** (100 MB / 1 GB transfer cap). An earlier attempt, `wild-night-02033634`, lost its credentials to a script bug; it's empty and expires on its own. | — | — |
+| H4b | **Claim the Neon project into the account that has the $250 credits** (before Tue Nov 10, or whenever we want to keep it). Claude mints the claim link on request (`POST https://claimable.neon.tech/v1/projects/cold-sky-31352168/claim` with `NEON_IDENTITY_ASSERTION`); the link is valid 15 min; open it and sign in to Neon. **Claiming revokes the current DB password**, so copy the new pooled connection string into `.env` and Vercel afterward. | whoever owns the Neon credits | keeping data past Nov 10; Neon credits |
+| H5 | ~~FIRMS MAP_KEY~~ **Done 2026-11-07**: requested for `terragent-data@agentmail.to` (email-only, no account), read from the inbox, saved as `FIRMS_MAP_KEY`. Verified: 5,000 transactions / 10 min; a live VIIRS NOAA-20 query returned 90 California detections for the last 24 h. | — | — |
+| H6 | **GFW API key: needs a human** (GFW requires an account with a password, which Claude may not create or log in to; keyless queries return 403). (1) Sign up at https://www.globalforestwatch.org/ (My GFW) and set the password from GFW's email. (2) Run `python3 scripts/gfw_api_key.py`: it asks for email + password (hidden), creates a one-year key allowlisted for `localhost` and `*.vercel.app`, and writes `GFW_API_KEY` to `.env`. Requests must send header `origin: localhost` (or the Vercel host). | any founder (~3 min) | forest-loss signals (deforestation playbook) |
 | H7 | Vercel account linked to GitHub | Laurence (repo owner) | step 7 deploy (first public deploy needs your OK) |
 | H8 | Approve first outbound email template | any founder, in dashboard | step 6 outreach |
 | H9 | Stripe Payment Link (optional) → `PAYMENT_LINK_URL` | whoever holds the Stripe account | quotes show a pay link |
@@ -59,7 +60,7 @@ _This table is refreshed after platform research; see docs/platform/README.md fo
 |---|---|
 | Which Claude / vision models does Naïve's router offer; can our Claude key be used via Naïve? | **Answered (models):** Claude Haiku/Sonnet/Opus 4.5–5.5 and Fable 5/5.1 are in the catalogue, so no Claude key is needed for agents. Vision-named models include `qwen/qwen3-vl-*` and `z-ai/glm-5v-turbo`; the catalogue has no modality field, so confirm image input with a test call. Still open: whether *our own* Claude key can be used. The docs index describes the model proxy as "your API key, your organization's balance" (i.e. the Naïve key and balance); the `claude_code` harness page is not yet read. |
 | Does inbound email wake Naïve agents? | researching (we use AgentMail webhooks regardless) |
-| Does Neon support PostGIS / h3 on our plan? | researching (not required: H3 computed in app) |
+| Does Neon support PostGIS / h3 on our plan? | **Answered (verified live):** yes. `pg_available_extensions` on our Neon project lists `postgis` 3.5.7, `h3` 4.1.3, `h3_postgis` 4.1.3, `vector` 0.8.0, `pgcrypto`. Not installed yet; schema still computes H3 in app code, so this is optional. |
 | Paid imagery prices & license terms | researching |
 | What each sponsor counts as "best use"; credits? | ask organizers at the event |
 | Stage pitch length; how table judging works | ask organizers at the event |
@@ -72,7 +73,7 @@ _This table is refreshed after platform research; see docs/platform/README.md fo
 |---|---|---|---|---|
 | 2026-11-07 | Naïve | $0 | **balance $250.86** (`GET /v1/credits/balance` = 250,855,107 micro-USD) | key checks only; no agents created yet |
 | 2026-11-07 | Monid | $0 | $0 spent; **wallet $1.00** (expected $20, see H3b) | key check: whoami, balance, 1 discover (all free) |
-| — | Neon | $0 | $0 / $250 | |
+| 2026-11-07 | Neon | $0 | $0 (Claimable Neon is free until claimed; credits apply after claim) | project `cold-sky-31352168` |
 
 ---
 

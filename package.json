@@ -11,17 +11,24 @@
     "typecheck": "next typegen && tsc --noEmit",
     "test": "vitest run",
     "db:migrate": "tsx scripts/migrate.ts",
-    "provision:agentmail": "tsx scripts/provision-agentmail.ts"
+    "provision:agentmail": "tsx scripts/provision-agentmail.ts",
+    "db:status": "tsx scripts/db-status.ts",
+    "test:live": "vitest run --config vitest.live.config.mts"
   },
   "dependencies": {
+    "@modelcontextprotocol/server": "^2.4.0",
     "@neondatabase/serverless": "^1.2.0",
+    "@usenaive-sdk/managed-agents": "^0.12.3",
     "agentmail": "^0.5.53",
     "h3-js": "^4.5.0",
+    "mcp-handler": "^2.3.1",
     "nanoid": "^5.1.16",
     "next": "16.4.5",
     "react": "19.3.0",
     "react-dom": "19.3.0",
+    "react-globe.gl": "^2.38.0",
     "svix": "^2.9.1",
+    "three": "^0.187.0",
     "zod": "^4.6.7"
   },
   "devDependencies": {
@@ -30,6 +37,7 @@
     "@types/node": "^24.19.2",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "@types/three": "^0.187.0",
     "dotenv": "^18.0.9",
     "eslint": "^9",
     "eslint-config-next": "16.4.5",
