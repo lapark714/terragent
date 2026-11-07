@@ -7,6 +7,8 @@ export default defineConfig({
     include: ["src/**/*.test.ts", "scripts/**/*.test.ts"],
     exclude: ["**/*.live.test.ts", "node_modules/**"],
     environment: "node",
+    // Never let unit tests reach production Neon or real services.
+    env: { TERRAGENT_DB: "memory", DATABASE_URL: "" },
     testTimeout: 30_000,
   },
 });
