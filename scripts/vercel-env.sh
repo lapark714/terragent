@@ -5,7 +5,7 @@
 #   bash scripts/vercel-env.sh --dry-run        # show which names would be set
 #   bash scripts/vercel-env.sh [project-name]   # default project: terragent
 #
-# Needs: `npx vercel login` done once, and VETTA_DEPLOY_API_KEY in .env — a NARROW Naïve key
+# Needs: `npx vercel login` done once, and VETTA_DEPLOY_API_KEY in .env — a NARROW Naïve key (NOTES H1d,
 # (no admin, no billing:write; NOTES H1d). The local admin key in VETTA_API_KEY is never uploaded:
 # on Vercel, VETTA_API_KEY is set to the narrow key, and the app refuses to start with an admin key.
 set -euo pipefail
@@ -36,7 +36,7 @@ env_get() {
 
 if [ -z "$(env_get VETTA_DEPLOY_API_KEY)" ]; then
   echo "VETTA_DEPLOY_API_KEY is missing from .env." >&2
-  echo "Mint a narrow Naïve key (scopes agents:*, sessions:*, files:read, billing:read, webhooks:*; no admin, no billing:write)," >&2
+  echo "Mint a narrow Naïve key (scopes agents:*, sessions:*, files:*, computers:write, billing:read, audit:read, webhooks:*; NO admin, NO billing:write)," >&2
   echo "add it to .env as VETTA_DEPLOY_API_KEY, then re-run. (NOTES H1d)" >&2
   exit 1
 fi
