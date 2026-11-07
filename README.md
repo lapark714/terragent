@@ -10,6 +10,6 @@ chosen yet; this README exists so the repo has a root commit.
 ## Local setup
 
 ```bash
-git clone git@github.com:lapark714/terragent.git
+git clone https://github.com/lapark714/terragent.git
 cd terragent
 ```
