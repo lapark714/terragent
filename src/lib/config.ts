@@ -67,12 +67,16 @@ export const PRICING = {
 // Safety caps
 // ---------------------------------------------------------------------------
 export const CAPS = {
-  /** AgentMail Free = 100/day org-wide; keep headroom for customer mail. */
-  emailsPerDayTotal: envNumber("CAP_EMAILS_PER_DAY", 90),
+  /**
+   * AgentMail Developer plan: 1,000/day, 100 per 5 min, 10 inboxes (verified 2026-11-07). The binding limit is
+   * the new-org ramp — ~5 distinct new recipients in the first hour, 10 the first day, 25 the first week —
+   * enforced by AgentMail (429/403). Treat those rejections as "blocked by provider", not errors (NOTES H2g).
+   */
+  emailsPerDayTotal: envNumber("CAP_EMAILS_PER_DAY", 900),
   outreachTouchesPerDay: envNumber("CAP_OUTREACH_PER_DAY", 40),
-  /** Monid: wallet holds ~$1 until H3b; hard per-call and per-day ceilings in our wrapper. */
+  /** Monid: $20 wallet for the weekend (H3b done); hard per-call and per-day ceilings in our wrapper. */
   monidMaxUsdPerCall: envNumber("CAP_MONID_PER_CALL_USD", 0.05),
-  monidMaxUsdPerDay: envNumber("CAP_MONID_PER_DAY_USD", 1),
+  monidMaxUsdPerDay: envNumber("CAP_MONID_PER_DAY_USD", 6),
   maxReportRevisions: 2,
   /** Free sample reports the signal engine may start per run, before allocation weights. */
   freeSamplesPerRun: envNumber("CAP_FREE_SAMPLES_PER_RUN", 6),
