@@ -10,15 +10,18 @@
     "lint": "eslint",
     "typecheck": "next typegen && tsc --noEmit",
     "test": "vitest run",
-    "db:migrate": "tsx scripts/migrate.ts"
+    "db:migrate": "tsx scripts/migrate.ts",
+    "provision:agentmail": "tsx scripts/provision-agentmail.ts"
   },
   "dependencies": {
     "@neondatabase/serverless": "^1.2.0",
+    "agentmail": "^0.5.53",
     "h3-js": "^4.5.0",
     "nanoid": "^5.1.16",
     "next": "16.4.5",
     "react": "19.3.0",
     "react-dom": "19.3.0",
+    "svix": "^2.9.1",
     "zod": "^4.6.7"
   },
   "devDependencies": {
