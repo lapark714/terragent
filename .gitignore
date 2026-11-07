@@ -76,3 +76,15 @@ coverage/
 *.log
 tmp/
 .cache/
+
+# --- Next.js / Vercel ---
+/.next/
+/out/
+.vercel
+*.tsbuildinfo
+next-env.d.ts
+.pnp
+.pnp.*
+
+# --- Local dev database (PGlite) ---
+.pglite/
