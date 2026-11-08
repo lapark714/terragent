@@ -21,6 +21,22 @@ describe("scrubForAgent", () => {
     expect(JSON.stringify(out)).not.toMatch(/@[a-z]+\.(com|co)/);
   });
 
+  it("keeps our own inboxes, which a contact form needs, and still hides everyone else's", () => {
+    const own = "terragent@agentmail.to";
+    const out = scrubForAgent({
+      contact_form: { reply_to: own },
+      opt_out_url: `mailto:${own}?subject=unsubscribe`,
+      rendered: { text: `Opt out: mailto:${own}?subject=unsubscribe or ask jane@acme.com` },
+      to: ["jane@acme.com", "Terragent@AgentMail.to"],
+      reply_to: "jane@acme.com",
+    }) as Record<string, unknown>;
+    expect(out.contact_form).toEqual({ reply_to: own });
+    expect(out.opt_out_url).toBe(`mailto:${own}?subject=unsubscribe`);
+    expect(out.rendered).toEqual({ text: `Opt out: mailto:${own}?subject=unsubscribe or ask ${EMAIL_PLACEHOLDER}` });
+    expect(out.to).toEqual([EMAIL_PLACEHOLDER, "Terragent@AgentMail.to"]);
+    expect(out.reply_to).toBe(EMAIL_PLACEHOLDER);
+  });
+
   it("is applied at the MCP boundary", () => {
     const res = toCallToolResult({ customer_email: "x@y.com", ok: true });
     expect(res.content[0]).toMatchObject({ type: "text" });

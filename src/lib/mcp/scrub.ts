@@ -7,6 +7,8 @@
  * need raw addresses or names: the server resolves recipients from request/prospect ids when it sends, and email
  * templates fill names server-side.
  */
+import { isOwnAddress } from "../agentmail/config";
+
 const EMAIL = /[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/g;
 /** Keys whose values identify a person by name. */
 const PERSON_KEYS = /^(customer_name|contact_name|sender_name|from_name|to_name|full_name|first_name|last_name|person_name)$/i;
@@ -15,6 +17,9 @@ const ADDRESS_KEYS = /^(customer_email|contact_email|counterpart_email|email|ema
 
 export const EMAIL_PLACEHOLDER = "[email on file]";
 export const NAME_PLACEHOLDER = "[name on file]";
+
+/** Our own inboxes are not personal data, and a contact form needs them: the reply address and the opt-out link. */
+const maskAddress = (address: string) => (isOwnAddress(address) ? address : EMAIL_PLACEHOLDER);
 
 /**
  * Known person names for the request at hand (customer, prospect contact). Live run #2 showed Naïve also flags a
@@ -36,7 +41,7 @@ function namePatterns(names: readonly (string | null | undefined)[]): RegExp[] {
 
 /** Scrub emails and the given person names from free text (handoff briefs, notes). */
 export function scrubText(text: string, names: readonly (string | null | undefined)[] = []): string {
-  let out = text.replace(EMAIL, EMAIL_PLACEHOLDER);
+  let out = text.replace(EMAIL, (a) => maskAddress(a));
   for (const re of namePatterns(names)) out = out.replace(re, NAME_PLACEHOLDER);
   return out;
 }
@@ -49,8 +54,11 @@ function walk(value: unknown, key: string | undefined, names: RegExp[]): unknown
   if (value === null || value === undefined) return value;
   if (key && PERSON_KEYS.test(key)) return typeof value === "string" && value.trim() ? NAME_PLACEHOLDER : value;
   if (typeof value === "string") {
-    if (key && ADDRESS_KEYS.test(key) && value.includes("@")) return EMAIL_PLACEHOLDER;
-    let out = value.replace(EMAIL, EMAIL_PLACEHOLDER);
+    if (key && ADDRESS_KEYS.test(key) && value.includes("@")) {
+      const found = value.match(EMAIL) ?? [];
+      return found.length && found.every((a) => isOwnAddress(a)) ? value : EMAIL_PLACEHOLDER;
+    }
+    let out = value.replace(EMAIL, (a) => maskAddress(a));
     for (const re of names) out = out.replace(re, NAME_PLACEHOLDER);
     return out;
   }
