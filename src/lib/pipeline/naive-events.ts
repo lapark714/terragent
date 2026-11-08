@@ -2,6 +2,7 @@
 import { logEvent } from "../events";
 import type { NaiveWebhookEnvelope } from "../naive/webhooks";
 import { errorMessage, query } from "./db";
+import { applyApprovalPolicy } from "./approval-policy";
 import { addNote } from "./requests";
 import { recordSessionIdle } from "./spend";
 
@@ -41,7 +42,13 @@ async function onSessionIdle(d: IdleData) {
   const base = { session_id: d.session_id, agent: spend.agent, stop_reason: stop, cost_usd: spend.cost_usd, deployment_id: d.deployment_id ?? null };
 
   if (stop === "awaiting_approval") {
-    const tools = (d.pending_actions ?? []).filter((a) => (a.kind ?? "tool") === "tool").map((a) => a.name);
+    // Our own policy first (gateway tools the catalog allows); whatever it doesn't clear waits for a founder.
+    const policy = await applyApprovalPolicy(d.session_id, spend.agent ?? null, spend.request_id).catch(async (e) => {
+      await logEvent("approval.policy_failed", "policy", { ...base, error: errorMessage(e).slice(0, 300) }, spend.request_id);
+      return { allowed: [] as string[], held: [] as string[] };
+    });
+    if (policy.allowed.length && !policy.held.length) return; // fully cleared by policy: nothing waits on a human
+    const tools = policy.held.length ? policy.held : (d.pending_actions ?? []).filter((a) => (a.kind ?? "tool") === "tool").map((a) => a.name);
     await logEvent("approval.pending", "naive", { ...base, tools }, spend.request_id);
   } else if (stop && ATTENTION.has(stop)) {
     await logEvent("session.attention", "naive", { ...base, code: d.code ?? null, error: d.error ?? null }, spend.request_id);
