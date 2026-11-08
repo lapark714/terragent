@@ -1,0 +1,808 @@
+{
+ "fps": 60,
+ "bpm": 120,
+ "durationInFrames": 3600,
+ "beats": [
+  0,
+  30,
+  60,
+  90,
+  120,
+  150,
+  180,
+  210,
+  240,
+  270,
+  300,
+  330,
+  360,
+  390,
+  420,
+  450,
+  480,
+  510,
+  540,
+  570,
+  600,
+  630,
+  660,
+  690,
+  720,
+  750,
+  780,
+  810,
+  840,
+  870,
+  900,
+  930,
+  960,
+  990,
+  1020,
+  1050,
+  1080,
+  1110,
+  1140,
+  1170,
+  1200,
+  1230,
+  1260,
+  1290,
+  1320,
+  1350,
+  1380,
+  1410,
+  1440,
+  1470,
+  1500,
+  1530,
+  1560,
+  1590,
+  1620,
+  1650,
+  1680,
+  1710,
+  1740,
+  1770,
+  1800,
+  1830,
+  1860,
+  1890,
+  1920,
+  1950,
+  1980,
+  2010,
+  2040,
+  2070,
+  2100,
+  2130,
+  2160,
+  2190,
+  2220,
+  2250,
+  2280,
+  2310,
+  2340,
+  2370,
+  2400,
+  2430,
+  2460,
+  2490,
+  2520,
+  2550,
+  2580,
+  2610,
+  2640,
+  2670,
+  2700,
+  2730,
+  2760,
+  2790,
+  2820,
+  2850,
+  2880,
+  2910,
+  2940,
+  2970,
+  3000,
+  3030,
+  3060,
+  3090,
+  3120,
+  3150,
+  3180,
+  3210,
+  3240,
+  3270,
+  3300,
+  3330,
+  3360,
+  3390,
+  3420,
+  3450,
+  3480,
+  3510,
+  3540,
+  3570
+ ],
+ "drop": 1800,
+ "lockup": 3420,
+ "scenes": {
+  "ask": {
+   "from": 0,
+   "to": 180
+  },
+  "signals": {
+   "from": 180,
+   "to": 420
+  },
+  "planner": {
+   "from": 420,
+   "to": 660
+  },
+  "routing": {
+   "from": 660,
+   "to": 810
+  },
+  "pricing": {
+   "from": 810,
+   "to": 960
+  },
+  "analysis": {
+   "from": 960,
+   "to": 1260
+  },
+  "delivery": {
+   "from": 1260,
+   "to": 1500
+  },
+  "mission": {
+   "from": 1500,
+   "to": 1800
+  },
+  "flood": {
+   "from": 1800,
+   "to": 2040
+  },
+  "vineyard": {
+   "from": 2040,
+   "to": 2250
+  },
+  "fields": {
+   "from": 2250,
+   "to": 2460
+  },
+  "cocoa": {
+   "from": 2460,
+   "to": 2670
+  },
+  "mining": {
+   "from": 2670,
+   "to": 2880
+  },
+  "methane": {
+   "from": 2880,
+   "to": 3060
+  },
+  "factory": {
+   "from": 3060,
+   "to": 3240
+  },
+  "rapid": {
+   "from": 3240,
+   "to": 3420
+  },
+  "signoff": {
+   "from": 3420,
+   "to": 3600
+  }
+ },
+ "cuts": [
+  0,
+  180,
+  420,
+  660,
+  810,
+  960,
+  1260,
+  1500,
+  1800,
+  2040,
+  2250,
+  2460,
+  2670,
+  2880,
+  3060,
+  3240,
+  3420
+ ],
+ "events": [
+  {
+   "t": 0.5,
+   "frame": 30,
+   "kind": "thud",
+   "label": "pin lands on globe"
+  },
+  {
+   "t": 1.0,
+   "frame": 60,
+   "kind": "tick",
+   "label": "email chip"
+  },
+  {
+   "t": 1.0,
+   "frame": 60,
+   "kind": "whoosh",
+   "label": "email to pin"
+  },
+  {
+   "t": 1.5,
+   "frame": 90,
+   "kind": "tick",
+   "label": "web chip"
+  },
+  {
+   "t": 1.5,
+   "frame": 90,
+   "kind": "whoosh",
+   "label": "web tap to pin"
+  },
+  {
+   "t": 2.0,
+   "frame": 120,
+   "kind": "tick",
+   "label": "api chip"
+  },
+  {
+   "t": 2.0,
+   "frame": 120,
+   "kind": "whoosh",
+   "label": "api call to pin"
+  },
+  {
+   "t": 3.5,
+   "frame": 210,
+   "kind": "tick",
+   "label": "feed chip 1"
+  },
+  {
+   "t": 3.75,
+   "frame": 225,
+   "kind": "tick",
+   "label": "feed chip 2"
+  },
+  {
+   "t": 4.0,
+   "frame": 240,
+   "kind": "tick",
+   "label": "feed chip 3"
+  },
+  {
+   "t": 4.25,
+   "frame": 255,
+   "kind": "tick",
+   "label": "feed chip 4"
+  },
+  {
+   "t": 4.5,
+   "frame": 270,
+   "kind": "tick",
+   "label": "feed chip 5"
+  },
+  {
+   "t": 4.75,
+   "frame": 285,
+   "kind": "tick",
+   "label": "feed chip 6"
+  },
+  {
+   "t": 5.0,
+   "frame": 300,
+   "kind": "tick",
+   "label": "feed chip 7"
+  },
+  {
+   "t": 5.25,
+   "frame": 315,
+   "kind": "tick",
+   "label": "feed chip 8"
+  },
+  {
+   "t": 5.5,
+   "frame": 330,
+   "kind": "tick",
+   "label": "sourcing node"
+  },
+  {
+   "t": 5.5,
+   "frame": 330,
+   "kind": "whoosh",
+   "label": "signal to sourcing"
+  },
+  {
+   "t": 6.0,
+   "frame": 360,
+   "kind": "tick",
+   "label": "outreach node"
+  },
+  {
+   "t": 6.0,
+   "frame": 360,
+   "kind": "whoosh",
+   "label": "sourcing to outreach"
+  },
+  {
+   "t": 6.25,
+   "frame": 375,
+   "kind": "click",
+   "label": "sample email in inbox"
+  },
+  {
+   "t": 7.25,
+   "frame": 435,
+   "kind": "tick",
+   "label": "planner opens"
+  },
+  {
+   "t": 7.75,
+   "frame": 465,
+   "kind": "tick",
+   "label": "spec area"
+  },
+  {
+   "t": 8.25,
+   "frame": 495,
+   "kind": "tick",
+   "label": "spec dates"
+  },
+  {
+   "t": 8.75,
+   "frame": 525,
+   "kind": "tick",
+   "label": "spec sensor"
+  },
+  {
+   "t": 9.25,
+   "frame": 555,
+   "kind": "tick",
+   "label": "spec method"
+  },
+  {
+   "t": 9.75,
+   "frame": 585,
+   "kind": "pass",
+   "label": "index hit: already known"
+  },
+  {
+   "t": 10.5,
+   "frame": 630,
+   "kind": "whoosh",
+   "label": "planner to acquisition"
+  },
+  {
+   "t": 11.25,
+   "frame": 675,
+   "kind": "tick",
+   "label": "acquisition opens"
+  },
+  {
+   "t": 11.5,
+   "frame": 690,
+   "kind": "whoosh",
+   "label": "route sentinel-2"
+  },
+  {
+   "t": 11.75,
+   "frame": 705,
+   "kind": "whoosh",
+   "label": "route landsat"
+  },
+  {
+   "t": 12.0,
+   "frame": 720,
+   "kind": "whoosh",
+   "label": "route sentinel-1"
+  },
+  {
+   "t": 12.5,
+   "frame": 750,
+   "kind": "whoosh",
+   "label": "route paid optical"
+  },
+  {
+   "t": 12.75,
+   "frame": 765,
+   "kind": "whoosh",
+   "label": "route paid radar"
+  },
+  {
+   "t": 13.0,
+   "frame": 780,
+   "kind": "whoosh",
+   "label": "route thermal"
+  },
+  {
+   "t": 13.75,
+   "frame": 825,
+   "kind": "tick",
+   "label": "option A"
+  },
+  {
+   "t": 14.0,
+   "frame": 840,
+   "kind": "tick",
+   "label": "option B"
+  },
+  {
+   "t": 14.25,
+   "frame": 855,
+   "kind": "tick",
+   "label": "option C"
+  },
+  {
+   "t": 14.75,
+   "frame": 885,
+   "kind": "click",
+   "label": "customer accepts"
+  },
+  {
+   "t": 15.25,
+   "frame": 915,
+   "kind": "chime",
+   "label": "payment confirmed"
+  },
+  {
+   "t": 16.25,
+   "frame": 975,
+   "kind": "tick",
+   "label": "analytics opens"
+  },
+  {
+   "t": 18.25,
+   "frame": 1095,
+   "kind": "whoosh",
+   "label": "analytics to interpreter"
+  },
+  {
+   "t": 18.5,
+   "frame": 1110,
+   "kind": "tick",
+   "label": "interpreter"
+  },
+  {
+   "t": 19.0,
+   "frame": 1140,
+   "kind": "whoosh",
+   "label": "interpreter to verifier"
+  },
+  {
+   "t": 19.25,
+   "frame": 1155,
+   "kind": "buzz",
+   "label": "verifier rejects"
+  },
+  {
+   "t": 19.75,
+   "frame": 1185,
+   "kind": "whoosh",
+   "label": "loop back"
+  },
+  {
+   "t": 20.25,
+   "frame": 1215,
+   "kind": "pass",
+   "label": "verifier passes 92/100"
+  },
+  {
+   "t": 21.5,
+   "frame": 1290,
+   "kind": "tick",
+   "label": "report answer"
+  },
+  {
+   "t": 21.75,
+   "frame": 1305,
+   "kind": "tick",
+   "label": "report imagery"
+  },
+  {
+   "t": 22.0,
+   "frame": 1320,
+   "kind": "tick",
+   "label": "report confidence"
+  },
+  {
+   "t": 22.25,
+   "frame": 1335,
+   "kind": "tick",
+   "label": "report sources"
+  },
+  {
+   "t": 23.0,
+   "frame": 1380,
+   "kind": "click",
+   "label": "report emailed"
+  },
+  {
+   "t": 23.5,
+   "frame": 1410,
+   "kind": "whoosh",
+   "label": "hex joins index"
+  },
+  {
+   "t": 25.25,
+   "frame": 1515,
+   "kind": "tick",
+   "label": "agent 1"
+  },
+  {
+   "t": 25.5,
+   "frame": 1530,
+   "kind": "tick",
+   "label": "agent 2"
+  },
+  {
+   "t": 25.75,
+   "frame": 1545,
+   "kind": "tick",
+   "label": "agent 3"
+  },
+  {
+   "t": 26.0,
+   "frame": 1560,
+   "kind": "tick",
+   "label": "agent 4"
+  },
+  {
+   "t": 26.25,
+   "frame": 1575,
+   "kind": "tick",
+   "label": "agent 5"
+  },
+  {
+   "t": 26.5,
+   "frame": 1590,
+   "kind": "tick",
+   "label": "agent 6"
+  },
+  {
+   "t": 26.75,
+   "frame": 1605,
+   "kind": "tick",
+   "label": "agent 7"
+  },
+  {
+   "t": 27.0,
+   "frame": 1620,
+   "kind": "tick",
+   "label": "agent 8"
+  },
+  {
+   "t": 27.25,
+   "frame": 1635,
+   "kind": "tick",
+   "label": "agent 9"
+  },
+  {
+   "t": 27.5,
+   "frame": 1650,
+   "kind": "tick",
+   "label": "agent 10"
+  },
+  {
+   "t": 27.75,
+   "frame": 1665,
+   "kind": "tick",
+   "label": "agent 11"
+  },
+  {
+   "t": 28.0,
+   "frame": 1680,
+   "kind": "tick",
+   "label": "agent 12"
+  },
+  {
+   "t": 30.5,
+   "frame": 1830,
+   "kind": "thud",
+   "label": "flood: pin"
+  },
+  {
+   "t": 30.75,
+   "frame": 1845,
+   "kind": "tick",
+   "label": "flood: chip"
+  },
+  {
+   "t": 31.0,
+   "frame": 1860,
+   "kind": "whoosh",
+   "label": "flood: sweep"
+  },
+  {
+   "t": 31.75,
+   "frame": 1905,
+   "kind": "click",
+   "label": "flood: answer"
+  },
+  {
+   "t": 34.5,
+   "frame": 2070,
+   "kind": "thud",
+   "label": "vineyard: pin"
+  },
+  {
+   "t": 34.75,
+   "frame": 2085,
+   "kind": "tick",
+   "label": "vineyard: chip"
+  },
+  {
+   "t": 35.0,
+   "frame": 2100,
+   "kind": "whoosh",
+   "label": "vineyard: sweep"
+  },
+  {
+   "t": 35.5,
+   "frame": 2130,
+   "kind": "click",
+   "label": "vineyard: answer"
+  },
+  {
+   "t": 38.0,
+   "frame": 2280,
+   "kind": "thud",
+   "label": "fields: pin"
+  },
+  {
+   "t": 38.25,
+   "frame": 2295,
+   "kind": "tick",
+   "label": "fields: chip"
+  },
+  {
+   "t": 38.5,
+   "frame": 2310,
+   "kind": "whoosh",
+   "label": "fields: sweep"
+  },
+  {
+   "t": 39.0,
+   "frame": 2340,
+   "kind": "click",
+   "label": "fields: answer"
+  },
+  {
+   "t": 41.5,
+   "frame": 2490,
+   "kind": "thud",
+   "label": "cocoa: pin"
+  },
+  {
+   "t": 41.75,
+   "frame": 2505,
+   "kind": "tick",
+   "label": "cocoa: chip"
+  },
+  {
+   "t": 42.0,
+   "frame": 2520,
+   "kind": "whoosh",
+   "label": "cocoa: sweep"
+  },
+  {
+   "t": 42.5,
+   "frame": 2550,
+   "kind": "click",
+   "label": "cocoa: answer"
+  },
+  {
+   "t": 45.0,
+   "frame": 2700,
+   "kind": "thud",
+   "label": "mining: pin"
+  },
+  {
+   "t": 45.25,
+   "frame": 2715,
+   "kind": "tick",
+   "label": "mining: chip"
+  },
+  {
+   "t": 45.5,
+   "frame": 2730,
+   "kind": "whoosh",
+   "label": "mining: sweep"
+  },
+  {
+   "t": 46.0,
+   "frame": 2760,
+   "kind": "click",
+   "label": "mining: answer"
+  },
+  {
+   "t": 48.25,
+   "frame": 2895,
+   "kind": "thud",
+   "label": "methane: pin"
+  },
+  {
+   "t": 48.5,
+   "frame": 2910,
+   "kind": "tick",
+   "label": "methane: chip"
+  },
+  {
+   "t": 48.75,
+   "frame": 2925,
+   "kind": "whoosh",
+   "label": "methane: sweep"
+  },
+  {
+   "t": 49.25,
+   "frame": 2955,
+   "kind": "click",
+   "label": "methane: answer"
+  },
+  {
+   "t": 51.25,
+   "frame": 3075,
+   "kind": "thud",
+   "label": "factory: pin"
+  },
+  {
+   "t": 51.5,
+   "frame": 3090,
+   "kind": "tick",
+   "label": "factory: chip"
+  },
+  {
+   "t": 51.75,
+   "frame": 3105,
+   "kind": "whoosh",
+   "label": "factory: sweep"
+  },
+  {
+   "t": 52.25,
+   "frame": 3135,
+   "kind": "click",
+   "label": "factory: answer"
+  },
+  {
+   "t": 54.0,
+   "frame": 3240,
+   "kind": "tick",
+   "label": "rapid tile 1"
+  },
+  {
+   "t": 54.25,
+   "frame": 3255,
+   "kind": "tick",
+   "label": "rapid tile 2"
+  },
+  {
+   "t": 54.5,
+   "frame": 3270,
+   "kind": "tick",
+   "label": "rapid tile 3"
+  },
+  {
+   "t": 54.75,
+   "frame": 3285,
+   "kind": "tick",
+   "label": "rapid tile 4"
+  },
+  {
+   "t": 55.0,
+   "frame": 3300,
+   "kind": "tick",
+   "label": "rapid tile 5"
+  },
+  {
+   "t": 57.5,
+   "frame": 3450,
+   "kind": "thud",
+   "label": "pin settles into lockup"
+  }
+ ]
+}

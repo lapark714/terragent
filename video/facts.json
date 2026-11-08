@@ -1,0 +1,56 @@
+{
+  "_note": "Every on-screen claim traces to a line here. 'grounded' = in the product today; 'vision' = allowed as capability; 'illustrative' = scenario numbers, shown under the 'What you could ask' tag.",
+  "grounded": [
+    "Twelve AI agents: Coordinator, Customer comms, Supplier comms, Outreach, Planner, Acquisition, Pricing, Interpreter, Analytics, Verifier, Sourcing, Market research.",
+    "Requests arrive by email, on the website (pick a place on a globe or type an address/coordinates), by API, or via an MCP endpoint for other AI agents.",
+    "The signal engine watches NOAA/NWS weather alerts, NASA FIRMS fire detections, USGS earthquakes, NOAA river flood gauges, OpenFEMA disaster declarations, Global Forest Watch deforestation alerts, BLM mining claims, USGS mineral records, and news.",
+    "Signals are matched to businesses' sites; one AI-disclosed outreach email goes out with a free sample analysis.",
+    "The Planner writes a data spec (area, dates, sensor, method) and checks the Earth index (an H3 hexagon grid of everything measured) first.",
+    "Free data first: Sentinel-2 and Landsat. When paid imagery would answer better, agents price it from satellite marketplaces.",
+    "Agents quote up to three options; nothing runs until the customer accepts one.",
+    "Analysis runs server-side in a sandboxed cloud computer: water extent, burn severity, vegetation change, before/after change detection.",
+    "A separate Verifier agent grades every report against a checklist and sends weak ones back.",
+    "Reports contain a plain answer, before/after images with capture dates, measurements, a confidence level, every source with dates, limitations, and a human-review note when stakes are high.",
+    "Everything is logged on mission control, including every time a human steps in.",
+    "Stack: Naïve managed agents, AgentMail, Monid, Neon Postgres."
+  ],
+  "vision": [
+    "More sensor types: SAR radar, thermal, hyperspectral, methane, 30 cm commercial optical, night lights, LiDAR elevation.",
+    "Agents collect payment autonomously.",
+    "The Earth index compounds: every answer makes the next one faster and cheaper."
+  ],
+  "illustrative": [
+    "7 of 40 sites under water · High confidence",
+    "Fire stopped 340 m from the vines",
+    "3 fields need water first",
+    "No clearing detected since Dec 2020 · Compliant",
+    "Strong iron-oxide indicators in the NE quadrant",
+    "Plume detected · est. 120 kg/h",
+    "+18% built area in 6 months",
+    "Verifier score 92/100 on the demonstration job",
+    "Quote option prices on the pricing card ($85 / $240 / $890), modelled on the product's quote UI",
+    "Job counters in the mission scene (steps run by agents, agents working, human interventions 0) count the one job shown in this film, not company totals",
+    "Field stress percentages, spectral band labels and the 'Smoke over the site on one date' limitation line",
+    "Customer reply 'Yes, please check.' in the demonstration thread",
+    "Earth index label 'Baseline known · needs fresh imagery' on the demonstration job",
+    "Quote option labels 'Analysis fee · Free satellite imagery', 'Paid imagery · 30 cm', 'Paid radar · SAR'",
+    "Cocoa alert grid labels '0 inside', and the existing/new roof split in the factory scene",
+    "Thread labels 'Same email thread', 'Your verified report is ready', 'Share link attached'",
+    "Report source line 'Landsat · cross-check' and the demonstration coordinates 38.50°N 122.35°W"
+  ],
+  "brief_storyboard": [
+    "EU deforestation rule check",
+    "Sentinel-1 radar in the free tier",
+    "30 cm commercial optical, SAR and thermal in the paid tier"
+  ],
+  "needs_founder_check": [
+    "'Zero humans in the loop' is the brief's own copy. NOTES.md records that paid data orders are still bought by a founder by hand, and no payment method is connected. See brief.md."
+  ],
+  "never": [
+    "fake customer names or logos",
+    "testimonials",
+    "revenue or user counts",
+    "investment or token language",
+    "the word 'deposits' for minerals"
+  ]
+}
