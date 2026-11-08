@@ -232,6 +232,25 @@ describe("follow-ups", () => {
     return ready;
   }
 
+  it("states a starting price on a first touch for quoted work, and the monitoring price on a follow-up", async () => {
+    const { prospectId } = await seedReadyProspect(db, { contact_email: "ops@forest.test", playbook: "deforestation" });
+    await seedTemplate(db, { playbook: "deforestation" });
+    await seedTemplate(db, { playbook: "all", kind: "followup", subject: "New image for {{company}}", body: "{{new_info}} Keep watching ({{price}}). {{report_url}}" });
+    await makeWarm("ops@forest.test");
+    const context = await getOutreachContext({ prospectId });
+    expect(context.rendered.text).toContain("from $29 per area, quoted first");
+    expect(context.rendered.text).not.toContain("per additional sourcing area");
+    await sendOutreachEmail({ prospectId, kind: "outreach", actor: "comms-outreach" });
+    await db.query("UPDATE messages SET created_at = now() - interval '2 days' WHERE prospect_id = $1", [prospectId]);
+
+    await insert(db, "earth_index", { h3_cell: "88291a8b6dfffff", h3_res: 8, layer: "deforestation", metric: "ndvi_delta", value: -0.4, observed_at: "2026-11-09", source: "sentinel-2-l2a:S2C", change_flag: true });
+    const { cellToLatLng } = await import("h3-js");
+    const [lat, lon] = cellToLatLng("88291a8b6dfffff");
+    await db.query("UPDATE prospects SET asset_lat = $2, asset_lon = $3 WHERE id = $1", [prospectId, lat, lon]);
+    await sendOutreachEmail({ prospectId, kind: "followup", newInfo: "Forest loss along the east edge on 9 Nov (NDVI -0.4).", actor: "comms-outreach" });
+    expect(mocks.replyInThread).toHaveBeenCalledWith(expect.objectContaining({ kind: "followup", text: expect.stringContaining("$49 per site per month") }));
+  });
+
   it("never sends a plain reminder", async () => {
     const { prospectId } = await touchedWarmProspect();
     expect((await listFollowups({})).followups).toEqual([]);

@@ -40,6 +40,7 @@ const CONTACT_FORM_RULES = [
   "Never solve a CAPTCHA: skip the form and record_contact_form_touch status=skipped skip_reason=captcha.",
   "Skip sites or forms that say no solicitations (skip_reason=no_solicitation_notice).",
   "Give reply_to as the email to reply to. One touch per business, ever.",
+  "A form is not an email: where the text says to reply to this email, say to write to the reply_to address instead.",
   "Paste rendered.text (you may shorten it to fit the form, keeping the finding, report link, price, AI disclosure and opt-out).",
   "Right after submitting, call record_contact_form_touch with the exact text you sent.",
 ];
@@ -50,11 +51,16 @@ const ON_FINISH =
   "A blocked email or skip_reason form_error leaves it open for one retry. If you decide not to contact them, " +
   "log_decision kind outreach, then set_status cancelled with the reason (if set_status refuses, add_note the reason instead).";
 
-/** The next step each playbook's first touch offers (spec §2 playbooks). */
+const MONITORING_PRICE = `$${PRICING.monitoringPerSiteMonthlyUsd} per site per month`;
+
+/**
+ * The next step each playbook's first touch offers (spec §2 playbooks). Pricing v2: work beyond monitoring is quoted
+ * per job by size, so outreach only ever states a starting price for it.
+ */
 const PRICE_BY_PLAYBOOK: Record<OutboundPlaybook, string> = {
-  disasters: `$${PRICING.monitoringPerSiteMonthlyUsd} per site per month`,
-  deforestation: `$${PRICING.minReportUsd} per additional sourcing area`,
-  mining: `$${PRICING.monitoringPerSiteMonthlyUsd} per site per month`,
+  disasters: MONITORING_PRICE,
+  deforestation: `from $${PRICING.minReportUsd} per area, quoted first`,
+  mining: MONITORING_PRICE,
 };
 
 interface TemplateRow {
@@ -180,7 +186,8 @@ async function loadContext(
     event: signal?.title ?? null,
     finding: headlineFinding(report),
     report_url: report.url,
-    price: PRICE_BY_PLAYBOOK[p.playbook as OutboundPlaybook] ?? `$${PRICING.minReportUsd} per report`,
+    // A follow-up offers to keep watching the site, whatever the playbook.
+    price: kind === "followup" ? MONITORING_PRICE : (PRICE_BY_PLAYBOOK[p.playbook as OutboundPlaybook] ?? `from $${PRICING.minReportUsd} per report, quoted first`),
   };
   const vars = { ...agentVars, ...Object.fromEntries(Object.entries(facts).filter((e): e is [string, string] => !!e[1]?.trim())) };
   return { prospect: p, report, channel, channelReason: reason, template, vars, optOut, replyTo, touchesLeft: CAPS.outreachTouchesPerDay - sent, history, signal };
