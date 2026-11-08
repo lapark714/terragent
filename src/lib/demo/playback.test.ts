@@ -44,11 +44,10 @@ describe("demoFrame", () => {
     for (const e of demoFrame(c, T0 + 1000).progress.events) expect(Date.parse(e.at)).toBeLessThanOrEqual(T0 + 1000);
   });
 
-  it("a paid option waits for a founder to buy the imagery, as the real system does", () => {
+  it("a paid option waits for the imagery to arrive", () => {
     const f = demoFrame(clock({ acceptedAt: T0 + 60_000, optionId: "B" }), T0 + 600_000);
     expect(f.progress.status).toBe("awaiting_approval");
     expect(f.progress.terminal).toBe(false);
-    expect(f.progress.events.some((e) => e.type === "order.prepared")).toBe(true);
   });
 });
 

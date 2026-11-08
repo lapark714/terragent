@@ -10,7 +10,7 @@ import { useEffect, useId, useRef, useState } from "react";
 import type { PublicQuote, PublicQuoteOption } from "@/lib/dashboard/public";
 import type { QuoteOptionId } from "@/lib/domain";
 import {
-  acceptLabel, afterChoiceText, chosenText, CLOSED_TEXT, CONFIDENCE_TEXT, dataText, emailHint, ESTIMATE_NOTE, introText, isEstimate,
+  acceptLabel, afterChoiceText, chosenText, DEMO_PAID_AFTER_CHOICE, CLOSED_TEXT, CONFIDENCE_TEXT, dataText, emailHint, ESTIMATE_NOTE, introText, isEstimate,
   NETWORK_ERROR, orderOptions, priceText, quotePath, quoteState, readAcceptResponse, recommendedId, resolutionText,
   SOURCE_TEXT, validUntilText, type AcceptResult,
 } from "./quote";
@@ -53,7 +53,9 @@ export function QuoteChoice({ quote, requestId, contact, onAccepted, onDemoAccep
         <p ref={result} tabIndex={-1} role="status" className="text-lg leading-relaxed">
           {chosenText(quote, chosen, state.kind === "accepted" ? state.at : null)}.
         </p>
-        <p className="text-fg-2">{afterChoiceText(option?.kind)}</p>
+        <p className="text-fg-2">
+          {onDemoAccept && option?.kind && option.kind !== "free_data" ? DEMO_PAID_AFTER_CHOICE : afterChoiceText(option?.kind)}
+        </p>
       </div>
     );
   }

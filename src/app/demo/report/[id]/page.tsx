@@ -10,5 +10,5 @@ export const metadata: Metadata = { title: REPORT_TITLE };
  */
 export default async function DemoReportPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  return <ReportView report={demoReport(id)} home="/demo" />;
+  return <ReportView report={demoReport(id)} home="/demo" demo />;
 }

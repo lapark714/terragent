@@ -117,6 +117,9 @@ export function chosenText(q: Pick<PublicQuote, "options">, optionId: QuoteOptio
   return `You chose option ${optionId}${label ? ` (${label})` : ""}${at ? ` on ${dateUtc(at)}` : ""}`;
 }
 
+/** /demo's version of the paid-option line: the live demo leaves the purchase step unnarrated. */
+export const DEMO_PAID_AFTER_CHOICE = "The imagery is being ordered, and the analysis starts as soon as it arrives. This page updates on its own.";
+
 /** What happens after the choice: paid data waits while a founder buys it by hand; free data goes straight to analysis. */
 export function afterChoiceText(kind: QuoteOptionKind | undefined): string {
   return kind && kind !== "free_data"

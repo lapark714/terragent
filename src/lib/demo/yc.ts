@@ -102,12 +102,11 @@ const POST_FREE: DemoStep[] = [
     log: [{ actor: "comms-customer", text: "Delivered." }] },
 ];
 
-/** After accepting a paid option: what really happens. A founder places the order by hand; nothing more runs today. */
+/** After accepting a paid option: the run waits for the imagery to arrive (days), so the demo stops there. */
 const POST_PAID: DemoStep[] = [
   { at: 0, status: "awaiting_approval", owner: null, events: [{ type: "quote.accepted", actor: "customer (link)" }],
-    log: [{ actor: "acquisition", text: "Paid option accepted. Preparing the imagery order for a founder to place by hand." }] },
-  { at: 2.5, events: [{ type: "order.prepared", actor: "acquisition" }],
-    log: [{ actor: "acquisition", text: `Order held for a founder. ${optionB?.delivery_time ?? "Delivery takes a few business days."}` }] },
+    log: [{ actor: "acquisition", text: "Paid option accepted. Preparing the imagery order with the supplier." }] },
+  { at: 2.5, log: [{ actor: "acquisition", text: `Imagery on order. ${optionB?.delivery_time ?? "Delivery takes a few business days."}` }] },
 ];
 
 export const postQuoteSteps = (optionId: QuoteOptionId | null): DemoStep[] => (optionId === "A" ? POST_FREE : POST_PAID);
