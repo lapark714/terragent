@@ -9,6 +9,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useId, useRef, useState } from "react";
 import { prettyCoords } from "./coords";
 import { placeToLocation, type Place } from "./geocode";
+import { DEMO_QUESTION } from "@/lib/demo/yc";
 
 const TOPICS = [
   { label: "Flooding", q: "How much of this area flooded?" },
@@ -40,17 +41,19 @@ function periodText(p: Period, from: string, to: string): string {
   return "";
 }
 
-export function AskSheet({ place, placeText, hello, onBack }: {
+export function AskSheet({ place, placeText, hello, onBack, demo = false }: {
   /** Resolved place, or null when continuing with free text the search couldn't place. */
   place: Place | null;
   placeText: string;
   hello: string;
   onBack: () => void;
+  /** /demo: prefilled for the YC scenario; submitting opens the scripted tracking page and sends nothing anywhere. */
+  demo?: boolean;
 }) {
   const router = useRouter();
-  const [question, setQuestion] = useState("");
-  const [period, setPeriod] = useState<Period>("latest");
-  const [from, setFrom] = useState("");
+  const [question, setQuestion] = useState(demo ? DEMO_QUESTION : "");
+  const [period, setPeriod] = useState<Period>(demo ? "range" : "latest");
+  const [from, setFrom] = useState(demo ? "2016-01-01" : "");
   const [to, setTo] = useState("");
   const [email, setEmail] = useState("");
   const [errors, setErrors] = useState<Errors>({});
@@ -97,6 +100,14 @@ export function AskSheet({ place, placeText, hello, onBack }: {
     setSending(true);
     const website = new FormData(e.currentTarget).get("website");
     const fullQuestion = [question.trim(), periodText(period, from, to)].filter(Boolean).join("\n\n");
+    if (demo) {
+      // Synthetic: a fake id and the place + question in the URL (never the email). A short pause sells the "send".
+      sent.current = true;
+      const id = `req_demo${Math.random().toString(36).slice(2, 10)}`;
+      const qs = new URLSearchParams({ loc: place ? placeToLocation(place) : placeText, q: fullQuestion });
+      setTimeout(() => router.push(`/demo/request/${id}?${qs}`), 900);
+      return;
+    }
     try {
       const res = await fetch("/api/requests", {
         method: "POST",
