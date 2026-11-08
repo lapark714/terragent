@@ -14,7 +14,7 @@ import { polygonBbox } from "../geo/h3";
 import { newId } from "../ids";
 import { upsertCard } from "../naive/board";
 import { errorMessage, json, num, query, queryOne, round2 } from "./db";
-import { needsQuote } from "./gates";
+import { needsQuote, WAITING_ORDER_STATUSES } from "./gates";
 import { getProvider, isEmail, providerView, type ProviderRow } from "./providers";
 import { scrubText } from "../mcp/scrub";
 import { handoff, isTerminal, requireRequest, setStatus, type RequestRow } from "./requests";
@@ -172,9 +172,6 @@ async function claimDashboardAllow(requestId: string): Promise<string | null> {
   );
   return row?.id ?? null;
 }
-
-/** Paid orders an accepted option is still waiting for (supplier quote requests from the investigation don't count). */
-const WAITING_ORDER_STATUSES = ["awaiting_approval", "approved", "placed"];
 
 /**
  * A founder bought the data by hand and it arrived (dashboard action "order" with decision "delivered"; the dashboard

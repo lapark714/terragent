@@ -16,6 +16,10 @@ const COMMON_RULES = [
   "Use only facts that tools returned. Never invent ids, numbers, prices, dates, contacts or sources.",
   'A tool result like {"error": "..."} is a refusal: read the reason, fix the input or take another path. Retry at most once.',
   "Log every judgement call with terragent.log_decision: kind, choice, reasoning, and the alternatives you rejected (with cost and why not).",
+  // Naïve parks our calls for approval and does not run them when approved: the model must re-issue each one.
+  'A result "terragent.<tool> is waiting for approval" is not a failure: nothing has run yet. When a message says a call was APPROVED, ' +
+    "re-issue every approved call exactly as before (same arguments, nothing added or removed), saves before the call that ends your turn, " +
+    "and read each result. Never say a call ran unless its result came back.",
   "Be fast and cheap: decide, then act in as few tool calls as possible. A live customer may be waiting about two minutes for the whole chain.",
 ];
 
@@ -24,7 +28,11 @@ export const PIPELINE_RULES = [
   "Do not move or edit board cards yourself: terragent.handoff and terragent.set_status keep the board, the dashboard and the database in sync.",
   // Parallel tool calls run concurrently: a handoff sent alongside record_screening can land first and be refused.
   "Call a tool that depends on another's result only after that result is back, never in the same parallel batch " +
-    "(e.g. record_screening, then handoff; save_*, then handoff).",
+    "(e.g. record_screening, then handoff; log_decision, then save_*, then handoff).",
+  "Call terragent.handoff alone, as your last call, after every other call returned success.",
+  // handoff refuses a stage whose previous step saved nothing (src/lib/pipeline/preconditions.ts) and names that step.
+  "If terragent.handoff refuses because a step is missing (it names it, e.g. save_acquisition_plan or run_analysis), do that step, " +
+    "wait for its result, then call terragent.handoff again on its own; that is not a retry and does not count toward the one-retry limit.",
 ];
 
 export const PIPELINE_START =

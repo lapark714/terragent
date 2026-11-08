@@ -50,7 +50,10 @@ export function register(r: ToolRegistrar): void {
       const lane = await handoff({
         requestId: a.request_id, from: ctx.agent, to: a.to, stage: a.stage, instructions: a.instructions, status: a.status, quoteAccepted: a.quote_accepted,
       });
-      return { request_id: a.request_id, to: a.to, stage: a.stage, ...lane, next: "Your part is done; end your turn." };
+      return {
+        request_id: a.request_id, to: a.to, stage: a.stage, ...lane,
+        next: "Handed off. End your turn once every other call you made has returned success (re-issue any approved call that has not run yet).",
+      };
     },
   );
 

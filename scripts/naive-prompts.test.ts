@@ -67,6 +67,7 @@ describe("PRICING v2 prompts", () => {
     expect(q).toMatch(/Never prepare or place a paid order before the customer has accepted an option/);
     expect(q).toMatch(/terragent\.handoff to pricing \(stage pricing\)/);
     expect(q).toMatch(/Free sample \(is_free_sample\): free data only/);
+    expect(q).toMatch(/to interpreter \(stage report\) when the saved plan's choice is existing_index/);
   });
 
   it("coordinator: quotes wait on the customer; a nudge only with new information", () => {
@@ -79,6 +80,37 @@ describe("PRICING v2 prompts", () => {
 
   it.each(["acquisition", "pricing", "comms-customer", "coordinator"] as const)("%s: never writes a person's name or email into a brief", (a) => {
     expect(system(a)).toMatch(/name, email address or phone number/);
+  });
+});
+
+/** Naïve parks our calls for approval and approving one does not run it: the model re-issues each approved call itself. */
+describe("parked calls and handoff refusals", () => {
+  const withHandoff = AGENT_NAMES.filter((a) => granted(a).has("terragent.handoff"));
+
+  it.each(AGENT_NAMES)("%s: \"waiting for approval\" is not a failure, and approved calls are re-issued, saves first", (a) => {
+    const p = system(a);
+    expect(p).toContain('A result "terragent.<tool> is waiting for approval" is not a failure');
+    expect(p).toMatch(/re-issue every approved call exactly as before[^.]*saves before the call that ends your turn/);
+    expect(p).toMatch(/Never say a call ran unless its result came back/);
+  });
+
+  it("every agent with terragent.handoff calls it alone, as its last call", () => {
+    expect(withHandoff).toEqual(expect.arrayContaining(["coordinator", "acquisition", "planner", "analytics", "interpreter"]));
+    for (const a of withHandoff) expect(system(a), a).toContain("Call terragent.handoff alone");
+  });
+
+  it("pipeline agents do a step handoff names as missing, then hand off again (not a retry)", () => {
+    for (const a of withHandoff.filter((x) => x !== "coordinator")) {
+      expect(system(a), a).toMatch(/If terragent\.handoff refuses because a step is missing[\s\S]*does not count toward the one-retry limit/);
+    }
+  });
+
+  it("interpreter: save_report_draft comes before check_report_rules (rules check a saved report_id)", () => {
+    const p = system("interpreter");
+    const save = p.indexOf("terragent.save_report_draft");
+    expect(save).toBeGreaterThan(-1);
+    expect(save).toBeLessThan(p.indexOf("terragent.check_report_rules"));
+    expect(p).toMatch(/terragent\.handoff to verifier \(stage verification\), on its own/);
   });
 });
 

@@ -81,7 +81,7 @@ beforeEach(async () => {
   vi.stubEnv("TERRAGENT_LANES", "off");
   await db.query("TRUNCATE requests, quotes, events, decisions, revenue, orders");
   await db.query(
-    `INSERT INTO requests (id, source, question, status, quote_id, meta) VALUES ($1, 'portal', $2, 'quoted', 'qte_flow1', '{"screening":{"allowed":true}}')`,
+    `INSERT INTO requests (id, source, question, status, quote_id, meta, acquisition_plan) VALUES ($1, 'portal', $2, 'quoted', 'qte_flow1', '{"screening":{"allowed":true}}', '{"choice":"free"}')`,
     [REQ, "Did the storm damage our roof?\n\n(sent from the portal)"],
   );
   await db.query(

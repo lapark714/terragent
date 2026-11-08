@@ -27,7 +27,8 @@ export const acquisition: AgentDefinition = {
       "terragent.save_acquisition_plan: choice (the source the cheapest answering option needs: existing_index, free or paid), free_option (sufficient + why), " +
         "paid_options (every paid source you compared, with est_cost_usd from SkyWatch or the registry; for a provider with no public price put 0 and say " +
         "\"no public price\" in why, the quote then shows a range), data_cost_usd (0 for free), and a justification that says why free data is not enough whenever choice = paid.",
-      "Hand off: free sample → terragent.handoff to analytics (stage analysis), free data only. Otherwise → terragent.handoff to pricing (stage pricing): which sources " +
+      "Hand off: free sample → terragent.handoff to analytics (stage analysis), free data only, or to interpreter (stage report) when the saved plan's choice is " +
+        "existing_index. Otherwise → terragent.handoff to pricing (stage pricing): which sources " +
         "you compared and which one answers the question; pricing turns the plan into the quote's options.",
       "Later runs: a brief saying the customer accepted a paid option and asking you to: terragent.get_order for each held order, then terragent.place_paid_order " +
         "(it pauses for a founder; a founder buys by hand), then terragent.add_note with the order ids and stop. The analysis starts by itself when a " +

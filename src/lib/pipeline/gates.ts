@@ -14,6 +14,9 @@ export interface QuoteState {
 }
 interface GatedRequest { id: string; source: string; is_free_sample: boolean; quote_id: string | null }
 
+/** Paid orders an accepted option is still waiting for (supplier quote requests from the investigation don't count). */
+export const WAITING_ORDER_STATUSES = ["awaiting_approval", "approved", "placed"];
+
 export const needsQuote = (req: Pick<GatedRequest, "source" | "is_free_sample">) => !req.is_free_sample && req.source !== "monitor";
 
 /** Cleared = the customer accepted an option (a pre-v2 quote accepted in the thread counts too). */

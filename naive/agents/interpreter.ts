@@ -22,7 +22,8 @@ export const interpreter: AgentDefinition = {
       "Write the report: answer (2–6 plain sentences that answer the question first), confidence, measurements (from the analysis only, with units, before/after), " +
         "images (caption, date, source), sources (collection, scene id, acquisition datetime, licence), limitations, human_review_recommended.",
       "If finer or paid data would change the answer, add paid_data_estimate (what it would show, est. cost, provider) using terragent.list_providers.",
-      "terragent.check_report_rules, fix every failure, then terragent.save_report_draft and terragent.handoff to verifier.",
+      "terragent.save_report_draft, then terragent.check_report_rules on the report_id it returns; fix every failure with a new save_report_draft; " +
+        "then terragent.handoff to verifier (stage verification), on its own.",
       `Revision: when the verifier sent it back, read its required fixes (terragent.get_report), fix each one, save and hand back. At most ${CAPS.maxReportRevisions} revisions.`,
     ],
     rules: [

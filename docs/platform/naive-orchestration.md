@@ -355,17 +355,32 @@ await naive.sessions.confirmTool(sessionId, {   // POST /v1/sessions/{id}/tool_c
   tool_call_id: a.tool_call_id,
   decision: "allow",                          // or "deny"
   reason: "Customer paid; founder approved",  // on deny, fed back to the model as the tool result
-  scope: "call",                              // "call" (default) | "session" (grant that tool for the rest of this session; allow only)
+  scope: "call",                              // "call" (default) | "session" (per-tool-name grant for the rest of this session; allow only; read_people cards offer none). Terragent always passes "call".
 });
 // questions (ask_operator): naive.sessions.answer(sessionId, { tool_call_id, answers: { key: "value" } })  // POST /v1/sessions/{id}/answers
 ```
 CLI: `naive session inbox [--stop-reason awaiting_approval] [--agent …]`, `naive session confirm --session $SID --tool-call $CALL --allow | --deny --reason "…"`, `naive session answer $SID`.
-- Resumes automatically once the last pending action is answered. The 202 means accepted; the tool has not run yet.
+- Resumes automatically once the last pending action is answered. The 202 means accepted; the tool has not run, and Naïve never runs it for you (see "Observed 2026-11-08" below).
 - A held call costs nothing while waiting; it waits indefinitely.
 - Push signal: webhook `session.idle` with `data.stop_reason === "awaiting_approval"` (includes `pending_actions?`). `tool.confirm` itself is not delivered to webhooks.
 - Approver is recorded: event `tool.confirm.resolved` `{ tool_call_id, decision, reason, scope, actor, decided_at, proposed_args, final_args }` (on the member's session for a team member's call) and audit action `tool.approved` (SDK audit enum).
 - Delegated member threads (`wait:true`): their parked call is adopted onto the coordinator's top-level session with `pending_actions[].thread_id` (server schema comment, `cli/dist/index.js:27629-27633`), and api/agents.md says a member's approvals "link the coordinator's session, where they are answered" → confirm on the **coordinator** session id. Card-woken crew sessions are top-level sessions of their own and park on their own session id.
 - Agent `notifications: { email, approvals, questions, updates }`: email preferences; "approval and question messages deep-link to the paused session"; on a team a member's approvals/questions are mailed from its coordinator's settings; `email` required when any toggle is on (api/agents.md; server zod `AgentNotificationsSchema` in `cli/dist/index.js`). Cheap fallback alert for founders overnight.
+
+**Observed 2026-11-08: what confirmTool does (and does not).** From live sessions (`scripts/session-events.ts <ses_…> --approvals` prints each parked batch in confirm order and whether each allowed call was re-issued):
+- `tool_call_id` is `tc_<hash of name + args>`, not the model's `toolu_…` id.
+- A parked call returns `terragent.X is waiting for approval` (`is_error: true`) to the model at once; the session then idles `awaiting_approval` with one `tool.confirm` row per parked call.
+- `allow` does NOT run the call. On resume Naïve rewrites each confirmed call as the call, a "has NOT run, and this is not its result" tool result, and a user-role "APPROVED … issue X again now … byte for byte" message, in the order we confirmed them (probe `ses_fbp7vg8waqzwzqmagsndsv2rtt`). The model must re-issue each call itself.
+- The model re-issues the **last-confirmed** call first (9 of 11 production batches).
+- An identical re-issue runs once without parking and uses up the allow; a second identical call parks again; changed args make a new card (`ses_6q16adj9dsbq5cza8pdxtksvkv`, `ses_y45vyjt8fpc8mdkdtb86f83cjf`).
+- Multi-call batches can lose calls: 2 of 11 batches lost saves, and 5 of 25 allowed calls never ran. In `ses_nb14t9050y73z5j5mkbfyg7r6n` (acquisition, req_ybnemrwx4g) the batch `log_decision, log_decision, save_acquisition_plan, handoff` was confirmed in that order; the model re-issued only the handoff, whose result says to end the turn, so the plan and both decisions never ran (same in `ses_2c8a0rtfaqkwr56ph9y6f0s0hn`, req_bkxpefeuns: `log_decision, save_acquisition_plan, handoff`, only the handoff re-issued). Pricing then found no plan and bounced the request back.
+- `tool.confirm.resolved` shows only with `include_accepted=true` on the events list.
+- The intermediate bare `session.idle` rows did not reach our webhook (one per batch).
+- `scope: "session"` is a per-tool-name grant, allow only, but read_people cards offer no grant (capabilities/tools.md "Once a chat has read people's data"), so Terragent always uses `scope: "call"`. A session grant would also cover every later args of that tool name.
+- A save re-issued before its `log_decision` is refused and uses up its allow, so the identical save parks again (`ses_y45vyjt8fpc8mdkdtb86f83cjf`). In the 4 production batches where `log_decision` was confirmed last, it was re-issued first and the other call then ran (`ses_sdd0g7j1…`, `ses_ews1k894…`, `ses_37wp3ygz…`, `ses_bsxpn5rr…`).
+- Terragent's policy (`src/lib/pipeline/approval-policy.ts`): because the last-confirmed call is re-issued first, a call others depend on is confirmed last. Three groups, each in pending order: turn-ending and outbound calls (`CONFIRM_FIRST`: handoff, set_status, the send_* tools, deliver_report, record_contact_form_touch, submit_output), then the other allowed calls, then `terragent.log_decision`, so a decision is re-issued before the save that requires it. One failed confirm is held for a founder and the loop continues; a failed audit-event write doesn't stop it either. Server-side handoff preconditions refuse a handoff whose saves are missing.
+- A parked `browser` call clears only with a string `args.action` that is neither `signup`/`login` nor in that agent's `ask_actions`; anything else stays parked (the row shape has not been observed live).
+- Open questions for the Naïve team: what `deny` does to an identical re-issue (same `tc_` hash); whether `scope: "session"` on a read_people card returns 400; what sets read_people (the first `get_request` in each flagged session ran unparked and every later call parked).
 
 Source: https://usenaive.ai/docs/concepts/policies.md, https://usenaive.ai/docs/capabilities/tools.md#permission-policies, https://usenaive.ai/docs/concepts/session-operations.md#awaiting-approval-loop, https://usenaive.ai/docs/api/sessions.md#respond-to-a-tool-confirmation, https://usenaive.ai/docs/api/digest.md; SDK d.ts:153-240, 390-423, 2916-2935, 3877, 10420-10432, 10520-10523.
 

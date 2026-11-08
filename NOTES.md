@@ -50,6 +50,17 @@ _This table is refreshed after platform research; see docs/platform/README.md fo
   NEVER list (email.send, wallet, cards, payments, trading, social, phone, vault). Auto-approvals are logged as
   `approval.auto_allowed` events, not interventions. **Founder to-do:** ask the Naïve team on-site how the flag is
   decided for MCP tools.
+- **2026-11-08 — Parked batches: confirm order + handoff preconditions; `scope: "session"` rejected.** What `confirmTool`
+  does (docs/platform/naive-orchestration.md §3.6): `allow` does not run a parked call; Naïve replays each confirmed call
+  as "APPROVED, issue it again" in confirm order, and the model usually re-issues the last-confirmed one first. When that
+  was `handoff` ("end your turn") the saves batched with it never ran: 5 of 25 allowed calls in multi-call batches, twice
+  at acquisition → pricing (req_bkxpefeuns, req_ybnemrwx4g). Fix: every handoff is refused until its stage's output is
+  saved (src/lib/pipeline/preconditions.ts; `human:*` senders exempt), and the policy confirms turn-ending calls first
+  and `log_decision` last. `scope: "session"` is not used: our parks are `read_people` cards, which offer no grant.
+  Browser `signup`/`login` and any `ask_actions` entry are now held for a founder; before this they could auto-confirm.
+- **2026-11-08 — Analytics runs server-side (`terragent.run_analysis`).** The flag refuses bash, so the backend runs the
+  pipeline on its own Naïve computer `terragent-pipeline`, uploads the images and saves the result (or records the
+  monitor re-check). Analytics has no computer tools any more.
 - **2026-11-08 — Pricing v2 (Laurence): no free answers; per-job quotes with options; nothing runs until accepted.**
   The investigation (planning + source comparison) is free; its output is a quote of 1–3 options priced bottom-up
   (data per km² × dates × data types + analysis + risk + margin, ranges when supplier prices are unknown). Work starts

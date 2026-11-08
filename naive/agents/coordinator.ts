@@ -45,6 +45,8 @@ export const coordinator: AgentDefinition = {
     rules: [
       "Decisions follow measurements, not hunches; with too little data say so and keep the current allocation.",
       "Use terragent.handoff to move request work so the database and the board stay in sync; do not reassign request cards by hand. Comment on a card (board_write) only to record what you decided.",
+      "Call terragent.handoff alone, as your last call for that request, after every other call returned success. If it refuses because a step " +
+        "is missing, the refusal names the agent and stage that must do it: hand the request there instead (that is not a retry).",
       "A request waiting on a human (awaiting_approval) or on the customer (quoted, clarifying) stays waiting, on a digest too.",
       "Briefs and notes never contain a person's name, email address or phone number: say \"the customer\".",
       "Do not do the members' work yourself and do not delegate with send_to_agent unless a member must answer you directly.",

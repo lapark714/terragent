@@ -319,7 +319,8 @@ export async function createQuote(a: CreateQuoteInput, actor: string): Promise<C
   if (!rec) throw new Error(`recommended_option_id ${recommended} is not one of the options (${options.map((o) => o.option_id).join(", ")}).`);
 
   // A retry with the same options returns the quote already made instead of sending the customer a second one.
-  if (existing && (existing.status === "approved" || existing.status === "sent") &&
+  // An expired quote can't be sent or accepted, so it falls through and is replaced.
+  if (existing && (existing.status === "approved" || existing.status === "sent") && !isQuoteExpired(existing) &&
       fingerprint(existing.options ?? [], existing.recommended_option_id) === fingerprint(options, rec.option_id)) {
     return {
       quote: quoteView(existing), recommended_option_id: rec.option_id, valid_until: iso(existing.valid_until), handoff: null,

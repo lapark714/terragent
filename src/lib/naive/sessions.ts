@@ -73,7 +73,7 @@ export const APPROVABLE_TOOLS: Record<string, readonly AgentName[]> = {
   browser: ["comms-outreach"], // contact-form writes, until OUTREACH_CONTACT_FORM_APPROVED
 };
 /** Agents never sign up or log in anywhere: humans create accounts. */
-const NEVER_APPROVED_BROWSER_ACTIONS = new Set(["signup", "login"]);
+export const NEVER_APPROVED_BROWSER_ACTIONS: ReadonlySet<string> = new Set(["signup", "login"]);
 
 export function isApprovable(agent: AgentName, tool: string, args: Record<string, unknown>): boolean {
   if (!APPROVABLE_TOOLS[tool]?.includes(agent)) return false;

@@ -10,6 +10,7 @@ import { upsertCard } from "../naive/board";
 import { startAgentSession } from "../naive/sessions";
 import { errorMessage, json, query, queryOne } from "./db";
 import { assertPriceCleared, markQuoteAccepted } from "./gates";
+import { handoffBlockedReason } from "./preconditions";
 
 export interface RequestRow {
   id: string; source: RequestSource; playbook: string; status: RequestStatus; owner_agent: string | null; priority: "inbound" | "background";
@@ -130,8 +131,9 @@ export const isCustomerWork = (to: string, stage: string) => WORK_AGENTS.has(to)
  * Hand a request to the next agent: records events, starts the agent (inbound lane) or assigns a board card
  * (background lane; `lane` overrides the request's own, e.g. a board card for the coordinator on an inbound request).
  * Refuses finished requests, terminal status overrides, customer requests leaving Comms 2 before screening allowed
- * them, and any customer work (analytics, interpreter, verifier; analysis to delivery) before the customer accepted
- * a quote option (gates.ts).
+ * them, any customer work (analytics, interpreter, verifier; analysis to delivery) before the customer accepted
+ * a quote option (gates.ts), and a stage whose previous step hasn't saved its output (preconditions.ts; logged as
+ * handoff.refused).
  */
 export async function handoff(args: {
   requestId: string; from: string; to: AgentName; stage: string; instructions: string; status?: RequestStatus; quoteAccepted?: boolean;
@@ -147,11 +149,20 @@ export async function handoff(args: {
   }
   // Comms 2 is the screener, so only it may hold a customer request that hasn't been screened yet.
   if (needsScreening(req) && args.to !== "comms-customer") {
-    throw new Error(`Request ${req.id} has not passed screening; comms-customer must record_screening (allowed) first.`);
+    throw new Error(
+      `Request ${req.id} has not passed screening; comms-customer must record_screening (allowed) first, wait for its result, ` +
+        "then call terragent.handoff again on its own.",
+    );
   }
   if (args.quoteAccepted) await markQuoteAccepted(req, args.from);
   // Work starts only on an accepted option: the pipeline, the report (also from the Earth index), its review and delivery.
   if (isCustomerWork(args.to, args.stage)) await assertPriceCleared(req);
+  // The previous stage must have saved its output (preconditions.ts): a parked batch can lose a save but keep the handoff.
+  const blocked = await handoffBlockedReason(req, args);
+  if (blocked) {
+    await logEvent("handoff.refused", args.from, { to: args.to, stage: args.stage, reason: blocked }, req.id);
+    throw new Error(blocked);
+  }
 
   const repeat = await recentSameHandoff(req.id, args);
   if (repeat) return { ...repeat, deduped: true };

@@ -11,7 +11,9 @@ const pending: Promise<unknown>[] = [];
 vi.mock("next/server", () => ({ after: (fn: () => Promise<unknown>) => pending.push(fn()) }));
 vi.mock("../naive/spend", () => ({ sessionCostUsd: vi.fn(async () => 0.42) }));
 // Sessions the board woke (or a cron started) are looked up in Naïve once; no network in tests.
-const sessions = vi.hoisted(() => new Map<string, { agent_id: string; metadata: Record<string, unknown> }>());
+const sessions = vi.hoisted(() => new Map<string, { agent_id: string; metadata: Record<string, unknown>; pending_actions?: unknown[] }>());
+// Only reached when a test turns AUTO_APPROVE_GATEWAY_TOOLS on (the approval policy confirms parked calls).
+const confirmTool = vi.hoisted(() => vi.fn(async (_sessionId: string, _body: { tool_call_id: string; scope?: string }) => ({})));
 vi.mock("../naive/client", () => ({
   getNaive: vi.fn(async () => ({
     sessions: {
@@ -20,7 +22,9 @@ vi.mock("../naive/client", () => ({
         if (!s) throw new Error(`404 session ${id}`);
         return { id, ...s };
       }),
+      confirmTool,
     },
+    agents: { get: vi.fn(async () => ({ tools: { configs: {} } })) },
   })),
 }));
 
@@ -127,5 +131,32 @@ describe("POST /api/webhooks/naive", () => {
     const db = await getDb();
     expect((await db.query("SELECT agent, request_id FROM agent_sessions WHERE session_id = 'ses_cron'"))[0]).toEqual({ agent: "sourcing", request_id: null });
     expect((await db.query("SELECT agent FROM spend WHERE session_id = 'ses_cron'"))).toEqual([{ agent: "sourcing" }]);
+  });
+
+  it("lists a parked call the policy could not confirm in approval.pending, after confirming the rest", async () => {
+    vi.stubEnv("AUTO_APPROVE_GATEWAY_TOOLS", "true");
+    try {
+      const req = await createRequest({ question: "Is the levee breached?", source: "portal" });
+      await recordSession({ sessionId: "ses_pol", agent: "acquisition", requestId: req.id, lane: "inbound" });
+      const parked = [
+        { kind: "tool", tool_call_id: "tc_save", name: "terragent.save_acquisition_plan", args: {} },
+        { kind: "tool", tool_call_id: "tc_hand", name: "terragent.handoff", args: { to: "pricing" } },
+      ];
+      sessions.set("ses_pol", { agent_id: "agt_acq", metadata: {}, pending_actions: parked });
+      confirmTool.mockImplementation(async (_id, body) => {
+        if (body.tool_call_id === "tc_hand") throw new Error("503 upstream");
+        return {};
+      });
+
+      await deliver({ id: "evt_pol", type: "session.idle", created_at: "", data: { session_id: "ses_pol", stop_reason: "awaiting_approval", pending_actions: parked } });
+      expect(confirmTool.mock.calls.map(([, body]) => [body.tool_call_id, body.scope])).toEqual([["tc_hand", "call"], ["tc_save", "call"]]);
+      const mine = async (type: string) => (await eventsOf(type)).filter((e) => e.request_id === req.id).map((e) => e.payload);
+      expect(await mine("approval.pending")).toEqual([expect.objectContaining({ agent: "acquisition", tools: ["terragent.handoff"] })]);
+      expect(await mine("approval.policy_failed")).toEqual([expect.objectContaining({ tool: "terragent.handoff", tool_call_id: "tc_hand", error: "503 upstream" })]);
+      expect(await mine("approval.auto_allowed")).toEqual([expect.objectContaining({ tool: "terragent.save_acquisition_plan", tool_call_id: "tc_save", position: 2, of: 2 })]);
+    } finally {
+      vi.unstubAllEnvs();
+      confirmTool.mockReset();
+    }
   });
 });

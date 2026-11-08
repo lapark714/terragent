@@ -118,6 +118,8 @@ describe("nothing runs until the customer accepts an option", () => {
     // Committed revenue at the option's price, once; a repeat (double click, retried call) changes nothing.
     expect(await revenue(quote.id)).toEqual([{ kind: "committed", amount_usd: "29.00", request_id: req.id }]);
     expect(await acceptQuote({ requestId: req.id, optionId: "A", actor: "comms-customer", evidence: "yes" })).toMatchObject({ already_accepted: true });
+    // The report stage needs an analysis run after the acceptance (preconditions.ts).
+    await saveAnalysis({ requestId: req.id, result: sampleAnalysis(), fileIds: SAMPLE_FILE_IDS }, "analytics");
     await handoff({ requestId: req.id, from: "comms-customer", to: "interpreter", stage: "report", instructions: "Retry with the same acceptance", quoteAccepted: true });
     expect(await revenue(quote.id)).toHaveLength(1);
     await expect(acceptQuote({ requestId: req.id, optionId: "B", actor: "comms-customer", evidence: "actually B" })).rejects.toMatchObject({ code: "already_accepted" });

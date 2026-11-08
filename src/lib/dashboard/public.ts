@@ -143,7 +143,8 @@ export async function getRequestProgress(id: string): Promise<RequestProgress | 
   const quoteId = str(r.quote_id);
   const [events, [report], [quote]] = await Promise.all([
     db.query<{ type: string; actor: string; created_at: unknown }>(
-      "SELECT type, actor, created_at FROM events WHERE request_id = $1 ORDER BY created_at DESC, id DESC LIMIT 80",
+      // A refused handoff is an expected recovery step between agents, not news for the customer.
+      "SELECT type, actor, created_at FROM events WHERE request_id = $1 AND type <> 'handoff.refused' ORDER BY created_at DESC, id DESC LIMIT 80",
       [id],
     ),
     status === "delivered"

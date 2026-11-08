@@ -153,6 +153,18 @@ describe("acquisition and supplier tools", () => {
   });
 });
 
+describe("handoff result", () => {
+  it("tells the agent to re-issue approved calls instead of just ending its turn", async () => {
+    const req = await createRequest({ question: "Is the vineyard greener than last year?", lat: SITE.lat, lon: SITE.lon, source: "portal", email: "c@example.com", name: "Cam" });
+    await mergeMeta(req.id, { screening: { allowed: true } });
+    await saveDataSpec(sampleSpec(req.id), "planner");
+    const res = await call("planner", "handoff", { request_id: req.id, to: "acquisition", stage: "acquisition", instructions: "Find the scenes" });
+    expect(res.error).toBeUndefined();
+    expect(res.next).toMatch(/re-issue any approved call/);
+    expect(res.next).not.toMatch(/part is done/);
+  });
+});
+
 describe("status changes", () => {
   it("finishing statuses only come from their own tools or the coordinator", async () => {
     const req = await quotedRequest();

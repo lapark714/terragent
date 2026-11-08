@@ -13,13 +13,20 @@ export async function saveAcquisitionPlan(input: AcquisitionPlan, actor: string)
   if (isTerminal(req)) throw new Error(`Request ${req.id} is ${req.status}.`);
   if (!req.data_spec) throw new Error("No data spec yet; the planner must save_data_spec first.");
 
+  // This agent's own decisions in this run (since the request last came to acquisition): another agent's decision, or
+  // one from an earlier run, can't stand in for a log_decision call that was parked and never re-issued.
   const logged = await query<{ kind: string }>(
-    "SELECT DISTINCT kind FROM decisions WHERE request_id = $1 AND kind = ANY($2)",
-    [req.id, REQUIRED_DECISIONS],
+    `SELECT DISTINCT payload->>'kind' AS kind FROM events
+     WHERE request_id = $1 AND type = 'decision.logged' AND actor = $2 AND payload->>'kind' = ANY($3)
+       AND id > COALESCE((SELECT max(id) FROM events WHERE request_id = $1 AND type = 'handoff' AND payload->>'to' = 'acquisition'), 0)`,
+    [req.id, actor, REQUIRED_DECISIONS],
   );
   const missing = REQUIRED_DECISIONS.filter((k) => !logged.some((d) => d.kind === k));
   if (missing.length) {
-    throw new Error(`Log your reasoning first: log_decision kind ${missing.join(" and ")} (choice, reasoning, alternatives with cost).`);
+    throw new Error(
+      `Log your reasoning in this run first: terragent.log_decision kind ${missing.join(" and ")} (choice, reasoning, alternatives with cost); ` +
+        "wait for the results, then call terragent.save_acquisition_plan again on its own.",
+    );
   }
 
   if (plan.choice === "paid") {

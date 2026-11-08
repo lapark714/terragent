@@ -2,9 +2,14 @@ import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { getDb } from "../db/client";
 import { startAgentSession } from "../naive/sessions";
 import { upsertCard } from "../naive/board";
+import { logDecision } from "../events";
+import { saveAcquisitionPlan } from "./acquisition";
+import { saveAnalysis } from "./analyses";
+import { saveReportDraft } from "./reports";
 import { createRequest, getRequest, handoff, setStatus, startInboundRequest } from "./requests";
 import { recordScreening } from "./screening";
-import { setupMemoryDb } from "./testing";
+import { saveDataSpec } from "./specs";
+import { SAMPLE_FILE_IDS, sampleAnalysis, sampleDraft, samplePlan, sampleSpec, setupMemoryDb } from "./testing";
 
 vi.mock("../naive/sessions", () => ({ startAgentSession: vi.fn(async () => ({ session_id: `ses_${Math.random().toString(36).slice(2, 10)}` })) }));
 vi.mock("../naive/board", () => ({
@@ -146,8 +151,21 @@ describe("background lane", () => {
   it("opens a fresh card per handoff and closes the previous one (a card is woken at most 3 times)", async () => {
     const req = await createRequest({ question: "Free sample: burn scar at the ranch", lat: 34, lon: -118, source: "signal", priority: "background", isFreeSample: true });
     const stages = [["planner", "planning"], ["acquisition", "acquisition"], ["analytics", "analysis"], ["interpreter", "report"], ["verifier", "verification"]] as const;
+    // Each stage saves its output before handing on (handoff refuses a stage whose input is missing; preconditions.ts).
+    const saveBefore: Partial<Record<(typeof stages)[number][0], () => Promise<unknown>>> = {
+      acquisition: () => saveDataSpec(sampleSpec(req.id), "planner"),
+      analytics: async () => {
+        for (const kind of ["source_selection", "free_vs_paid"] as const) {
+          await logDecision({ requestId: req.id, kind, choice: "free", reasoning: "Sentinel-2 is enough", agent: "acquisition" });
+        }
+        await saveAcquisitionPlan(samplePlan(req.id), "acquisition");
+      },
+      interpreter: () => saveAnalysis({ requestId: req.id, result: sampleAnalysis(), fileIds: SAMPLE_FILE_IDS }, "analytics"),
+      verifier: () => saveReportDraft(sampleDraft(req.id), "interpreter"),
+    };
     let from = "sourcing";
     for (const [to, stage] of stages) {
+      await saveBefore[to]?.();
       await handoff({ requestId: req.id, from, to, stage, instructions: `Do the ${stage}` });
       from = to;
     }
