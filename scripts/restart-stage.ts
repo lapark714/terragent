@@ -22,5 +22,6 @@ if (interrupt) {
   console.log("interrupted", interrupt);
 }
 await logIntervention({ actor, action: "restart_stage", reason: `${reason} (${to}, ${stage})`, requestId, refId: interrupt ?? null });
-const res = await handoff({ requestId, from: "coordinator", to, stage, instructions });
+// A founder restart is a human action: attribute it to them (agents retrying the same handoff are deduped, humans are not).
+const res = await handoff({ requestId, from: `human:${actor}`, to, stage, instructions });
 console.log("handoff", JSON.stringify(res));
