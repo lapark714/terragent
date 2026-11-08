@@ -34,3 +34,12 @@ export function roleForAddress(address: string): Inbox | null {
   for (const cfg of Object.values(inboxes())) if (cfg.address === a) return cfg.role;
   return null;
 }
+
+export function inboxAddress(role: Inbox): string {
+  return inboxes()[role].address;
+}
+
+/** True for any of our own inbox addresses (loop guard: never route or reply to ourselves). */
+export function isOwnAddress(address: string): boolean {
+  return roleForAddress(address) !== null;
+}
