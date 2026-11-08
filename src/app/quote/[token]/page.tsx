@@ -167,7 +167,7 @@ const priceText = (o: PublicQuoteOption) =>
   o.price_usd !== null ? usd(o.price_usd) : o.price_range_usd ? `${usd(o.price_range_usd[0])}–${usd(o.price_range_usd[1])}` : "on request";
 
 const KIND: Record<PublicQuoteOption["kind"], string> = {
-  free_data: "Free public satellite data",
+  free_data: "Free public satellite data; you pay for the analysis and verified report",
   archive: "Archive imagery, bought after you accept",
   tasking: "A new satellite capture, ordered after you accept",
   mixed: "Free and paid data combined",

@@ -182,19 +182,35 @@ export const MONITORING_OFFER =
   `Want us to keep watching this site? Reply "monitor" and we'll re-check it on each new clear satellite pass and write ` +
   `when something changes (${usdFmt(PRICING.monitoringPerSiteMonthlyUsd)} per site per month).`;
 
+/** The customer's live status page for a request (src/app/request/[id]/page.tsx). */
+export const requestStatusUrl = (requestId: string) => `${publicBaseUrl()}/request/${encodeURIComponent(requestId)}`;
+
+/**
+ * The report email. The full report link comes first, right under the greeting (Laurence, 2026-11-08): most readers
+ * click straight through. Pricing v2: the work was quoted and accepted before it ran, so the price line names the
+ * option the customer accepted.
+ */
 export function renderReportDelivery(a: {
   customerName?: string | null; question: string; report: ReportForEmail; paymentLink?: string | null; priceUsd?: number | null;
+  /** The quote option the customer accepted (pricing v2); without it the price line is the plain legacy one. */
+  acceptedOption?: { option_id: string; label: string; accepted_at?: string | Date | null } | null;
+  /** The request's status page; listed under the report link. */
+  statusUrl?: string | null;
   /** Default true; false when the site is already monitored (e.g. a monitoring follow-up's own report). */
   offerMonitoring?: boolean;
 }): RenderedEmail {
   const r = a.report;
+  const pay = a.paymentLink ? `You can pay here: ${a.paymentLink}` : "Reply to this email and we'll arrange payment.";
+  const opt = a.acceptedOption;
+  const on = opt ? dayText(opt.accepted_at ?? null) : null;
   const price = a.priceUsd
-    ? a.paymentLink
-      ? `The price for this report is ${usdFmt(a.priceUsd)}. You can pay here: ${a.paymentLink}`
-      : `The price for this report is ${usdFmt(a.priceUsd)}. Reply to this email and we'll arrange payment.`
+    ? opt
+      ? `Price: ${usdFmt(a.priceUsd)}, option ${opt.option_id} (${opt.label}) as you accepted${on ? ` on ${on}` : ""}. ${pay}`
+      : `The price for this report is ${usdFmt(a.priceUsd)}. ${pay}`
     : "";
   return compose(`Your Terragent report: ${r.title}`, [
     greeting(a.customerName),
+    `Your full report, with all images and sources, is ready: ${r.url}`,
     `You asked: "${a.question.trim()}"`,
     r.answer.trim(),
     `Confidence: ${capitalise(r.confidence)}.`,
@@ -202,9 +218,9 @@ export function renderReportDelivery(a: {
     r.sources.length ? `Sources:\n${r.sources.map((s) => `- ${s.name}, ${dateOnly(s.datetime)}`).join("\n")}` : "",
     `Limitations: ${r.limitations.trim()}`,
     r.human_review_recommended ? HUMAN_REVIEW_NOTE : "",
-    `Full report with all images and sources: ${r.url}`,
     price,
     a.offerMonitoring === false ? "" : MONITORING_OFFER,
+    a.statusUrl ? `This request's history: ${a.statusUrl}` : "",
   ], { images: reportImages(r) });
 }
 
@@ -231,7 +247,7 @@ export interface QuoteOptionForEmail {
 export const quoteAcceptUrl = (token: string) => `${publicBaseUrl()}/quote/${encodeURIComponent(token)}`;
 
 const KIND_TEXT: Record<string, string> = {
-  free_data: "free public satellite data",
+  free_data: "free public satellite data (the price is for our analysis and verified report)",
   archive: "archive imagery we buy for you",
   tasking: "a new satellite capture we order for you",
   mixed: "free and paid data combined",
@@ -301,6 +317,8 @@ export interface QuoteForEmail {
 export function renderQuote(a: {
   customerName?: string | null; question: string; quote: QuoteForEmail; paymentLink?: string | null; requestId: string;
   acceptUrl?: string | null;
+  /** The request's status page: shows the options with Accept buttons and every step after. */
+  statusUrl?: string | null;
 }): RenderedEmail {
   const options = a.quote.options ?? [];
   if (!options.length) return renderSinglePriceQuote(a);
@@ -322,6 +340,7 @@ export function renderQuote(a: {
     `${reply}${acceptUrl ? ` You can also choose online: ${acceptUrl}` : ""}`,
     paid ? "We buy paid imagery only after you accept an option that needs it." : "",
     `${until ? `This quote is valid until ${until}. ` : ""}Reference: ${a.requestId}`,
+    a.statusUrl ? `Follow this request, from your choice to the report: ${a.statusUrl}` : "",
   ]);
 }
 

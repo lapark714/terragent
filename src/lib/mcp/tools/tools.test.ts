@@ -24,6 +24,7 @@ vi.mock("../../email/templates", () => {
   return {
     renderClarifyingQuestion: e("question"), renderRefusal: e("refusal"), renderQuote: e("quote"), renderReportDelivery: e("report"),
     renderSupplierQuoteRequest: e("supplier"), quoteAcceptUrl: (token: string) => `https://terragent.test/quote/${token}`,
+    requestStatusUrl: (id: string) => `https://terragent.test/request/${id}`,
   };
 });
 

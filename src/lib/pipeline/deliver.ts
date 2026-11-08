@@ -5,6 +5,7 @@ import { isValidEmail, normalizeEmail } from "../email/address";
 import { suppress } from "../email/optout";
 import {
   type RenderedEmail, type ReportForEmail, renderClarifyingQuestion, renderCustomerUpdate, renderQuote, renderRefusal, renderReportDelivery,
+  requestStatusUrl,
 } from "../email/templates";
 import { replyInThread, type SendResult, sendEmail } from "../email/send";
 import { getThread } from "../email/threads";
@@ -121,7 +122,7 @@ export async function sendQuote(requestId: string, actor: string) {
   const forEmail = quoteForEmail(quote);
   const email = renderQuote({
     customerName: req.customer_name, question: req.question, requestId: req.id, paymentLink: quote.payment_link,
-    quote: forEmail, acceptUrl: forEmail.accept_url,
+    quote: forEmail, acceptUrl: forEmail.accept_url, statusUrl: requestStatusUrl(req.id),
   });
   const sent = await sendToCustomer(req, email, `${req.id}:quote:${quote.id}`, actor);
   if (sent.status === "sent") {
@@ -159,9 +160,12 @@ export async function deliverReport(requestId: string, actor: string) {
     await setStatus(req.id, "delivered", actor, "Available through the API (no email on the request)");
     return { status: "delivered", channel: "api", url: view.url };
   }
+  const accepted = quote?.accepted_option_id ? quote.options?.find((o) => o.option_id === quote.accepted_option_id) : undefined;
   const email = renderReportDelivery({
     customerName: req.customer_name, question: req.question, report: reportForEmail(view),
     paymentLink: quote?.payment_link ?? null, priceUsd: quote ? num(quote.price_usd) : null, offerMonitoring: !req.monitor_id,
+    acceptedOption: accepted ? { option_id: accepted.option_id, label: accepted.label, accepted_at: quote?.accepted_at } : null,
+    statusUrl: requestStatusUrl(req.id),
   });
   const sent = await sendToCustomer(req, email, `${req.id}:deliver:${report.id}`, actor);
   await logEvent(sent.status === "sent" ? "report.delivered" : "report.delivery_blocked", actor, { report_id: report.id, ...outcome(sent) }, req.id);

@@ -162,8 +162,11 @@ export async function acceptQuote(a: { requestId: string; optionId?: string | nu
   }
 
   const price = optionPriceLow(option);
+  // The customer's own acts (the decision, quote.accepted) keep their actor; the bookkeeping that follows a link
+  // acceptance is the system's, so the customer's timeline never shows "You" holding an order or writing a note.
+  const doer = a.actor === LINK_ACTOR ? "system" : a.actor;
   await query("UPDATE requests SET price_usd = $2, updated_at = now() WHERE id = $1", [req.id, price]);
-  await recordCommittedRevenue({ requestId: req.id, quoteId: quote.id, actor: a.actor });
+  await recordCommittedRevenue({ requestId: req.id, quoteId: quote.id, actor: doer });
   const evidence = scrubText((a.evidence ?? "").trim(), [req.customer_name]).replace(/\s+/g, " ").slice(0, 300) ||
     (a.actor === LINK_ACTOR ? "Accepted with the quote's accept link" : "Accepted in the email thread");
   const others = options.filter((o) => o.option_id !== option.option_id);
@@ -198,7 +201,7 @@ export async function acceptQuote(a: { requestId: string; optionId?: string | nu
           estCostUsd: d.data_cost_usd ?? d.data_cost_range_usd?.[1] ?? 0,
           justification: `Customer accepted option ${option.option_id} (${option.label}): ${option.answers}`.slice(0, 1000),
           deliveryTime: option.delivery_time, orderId: open?.id,
-        }, a.actor);
+        }, doer);
         orderIds.push(order.order_id);
       } catch (e) {
         warnings.push(`Order for ${d.provider_id} not prepared: ${errorMessage(e)}`);
@@ -206,11 +209,11 @@ export async function acceptQuote(a: { requestId: string; optionId?: string | nu
     }
     const now = await requireRequest(req.id);
     if (now.status !== "awaiting_approval") {
-      await setStatus(req.id, "awaiting_approval", a.actor, `Customer accepted option ${option.option_id}; paid data held for a founder to buy`);
+      await setStatus(req.id, "awaiting_approval", doer, `Customer accepted option ${option.option_id}; paid data held for a founder to buy`);
     }
     const held = orderIds.join(", ") || "(none prepared; see warnings)";
     await addNote(
-      req.id, a.actor,
+      req.id, doer,
       `For coordinator: the customer accepted option ${option.option_id} (${fmtPrice(option)}), which needs paid data. ` +
         `Held order(s) ${held} wait for a founder to buy by hand; the analysis starts when a founder marks the data delivered, ` +
         "not on free data meanwhile.",
@@ -218,7 +221,7 @@ export async function acceptQuote(a: { requestId: string; optionId?: string | nu
     // A board card (background lane, even for an inbound request) so the coordinator tracks the purchase; no session.
     try {
       await handoff({
-        requestId: req.id, from: a.actor, to: "coordinator", stage: "data_purchase", status: "awaiting_approval", lane: "background",
+        requestId: req.id, from: doer, to: "coordinator", stage: "data_purchase", status: "awaiting_approval", lane: "background",
         instructions:
           `The customer accepted option ${option.option_id} of quote ${quote.id}, which needs paid data. Held order(s) ${held} wait for a founder ` +
           "on the dashboard (Paid data orders): a founder buys the data by hand, then marks the order delivered, which starts the analysis by itself. " +
@@ -234,10 +237,10 @@ export async function acceptQuote(a: { requestId: string; optionId?: string | nu
   const next: AcceptNext = toReport ? "report" : "analysis";
   try {
     await handoff({
-      requestId: req.id, from: a.actor, to: toReport ? "interpreter" : "analytics", stage: toReport ? "report" : "analysis",
+      requestId: req.id, from: doer, to: toReport ? "interpreter" : "analytics", stage: toReport ? "report" : "analysis",
       instructions: toReport
         ? `The customer accepted option ${option.option_id} of quote ${quote.id}. The Earth index already answers it: write the report from the index (no pipeline run)`
-        : `The customer accepted option ${option.option_id} of quote ${quote.id} (${option.label}). Run the analysis: get_analysis_job, then the pipeline`,
+        : `The customer accepted option ${option.option_id} of quote ${quote.id} (${option.label}). Run the analysis: terragent.run_analysis, then hand off to interpreter`,
     });
   } catch (e) {
     warnings.push(`Accepted, but the handoff failed (${errorMessage(e)}); the coordinator sees it as stuck.`);

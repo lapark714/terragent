@@ -100,6 +100,21 @@ describe("customer and supplier emails", () => {
     expect(e.text).not.toContain("Opt out");
   });
 
+  it("puts the full report link right under the greeting, names the accepted option and links the status page", () => {
+    const e = renderReportDelivery({
+      customerName: "Pat", question: "Did it flood?", report, priceUsd: 85,
+      acceptedOption: { option_id: "B", label: "Sharp archive image", accepted_at: "2026-11-08T10:00:00Z" },
+      statusUrl: "https://terragent.test/request/req_1",
+    });
+    const lines = e.text.split("\n\n");
+    expect(lines[0]).toBe("Hi Pat,");
+    expect(lines[1]).toContain(report.url);
+    expect(e.text.indexOf(report.url)).toBeLessThan(e.text.indexOf(report.answer));
+    expect(e.html.indexOf(report.url)).toBeLessThan(e.html.indexOf("Did it flood?"));
+    expect(e.text).toContain("Price: $85, option B (Sharp archive image) as you accepted on 8 Nov 2026.");
+    expect(e.text).toContain("https://terragent.test/request/req_1");
+  });
+
   it("offers monitoring of the site in every delivery, unless it is already monitored", () => {
     const e = renderReportDelivery({ question: "Did it flood?", report });
     expect(e.text).toContain(MONITORING_OFFER);
@@ -172,11 +187,16 @@ describe("quote with options (pricing v2)", () => {
 
   afterEach(() => vi.unstubAllEnvs());
 
+  it("links the request's status page when given one", () => {
+    expect(render(quote, { statusUrl: "https://terragent.test/request/req_q1" }).text).toContain("https://terragent.test/request/req_q1");
+    expect(render().text).not.toContain("/request/");
+  });
+
   it("lists every option with what it answers, detail, delivery and price or range, the recommended one marked", () => {
     const e = render();
     expect(e.subject).toBe("Your Terragent quote (req_q1)");
     expect(e.text).toContain(
-      "- Option A: Free-data check. Answers: Whether floodwater reached the building. Free public satellite data, 10 m detail, 2 dates. " +
+      "- Option A: Free-data check. Answers: Whether floodwater reached the building. Free public satellite data (the price is for our analysis and verified report), 10 m detail, 2 dates. " +
         "Delivery: within 2 hours. Price: $29.",
     );
     expect(e.text).toContain("- Option B (recommended): Sharp archive image. Answers: Whether individual roof sections are damaged.");

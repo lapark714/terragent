@@ -33,6 +33,7 @@ vi.mock("../email/threads", () => ({
 }));
 vi.mock("../email/templates", () => ({
   renderReportDelivery: (a: { report: { url: string } }) => ({ subject: "Your report", text: `See ${a.report.url}`, html: "<p/>" }),
+  requestStatusUrl: (id: string) => `https://terragent.test/request/${id}`,
 }));
 
 beforeAll(async () => {
