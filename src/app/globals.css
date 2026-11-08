@@ -1,26 +1,111 @@
 @import "tailwindcss";
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
+/*
+ * Terragent design tokens. Night-side navy surfaces; four layer hues taken from the band ratios
+ * each playbook measures (burn/flood alarm, chlorophyll teal, iron-oxide ochre, customer periwinkle).
+ * The layer hues are validated as a categorical set on the panel surface; keep src/components/palette.ts in sync.
+ */
+@theme {
+  --color-space: #0a1523;
+  --color-panel: #0e1c2d;
+  --color-raised: #142739;
+  --color-line: #1d3249;
+  --color-line-strong: #2c4864;
+  --color-fg: #e7eef6;
+  --color-fg-2: #a6b7ca;
+  --color-fg-3: #7d92a9;
+  --color-disasters: #d9434f;
+  --color-forest: #1ba294;
+  --color-mining: #b28e1e;
+  --color-inbound: #7f83f0;
+  --color-inbound-hi: #9a9df5;
+  --color-human: #f2a7c0;
+  --color-alert: #f08a7a;
 }
 
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --font-sans: var(--font-archivo), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-jetbrains), ui-monospace, SFMono-Regular, Menlo, monospace;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+:root {
+  color-scheme: dark;
+}
+
+html,
+body {
+  background: var(--color-space);
+  color: var(--color-fg);
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+::selection {
+  background: color-mix(in oklab, var(--color-inbound) 45%, transparent);
+}
+
+:focus-visible {
+  outline: 2px solid var(--color-inbound-hi);
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+
+/* Archivo's width axis carries the brand: expanded for display type, normal for reading. */
+.stretch-wide {
+  font-stretch: 125%;
+}
+.stretch-semi {
+  font-stretch: 112%;
+}
+
+/* Hairline instrument grid: panels sit on the line colour with a 1px gap between them. */
+.instrument {
+  display: grid;
+  gap: 1px;
+  background: var(--color-line);
+  border: 1px solid var(--color-line);
+}
+
+.scroll-quiet {
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-line-strong) transparent;
+}
+
+@keyframes beacon {
+  0% { box-shadow: 0 0 0 0 color-mix(in oklab, currentColor 60%, transparent); }
+  100% { box-shadow: 0 0 0 8px transparent; }
+}
+.beacon {
+  animation: beacon 2s ease-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .beacon {
+    animation: none;
+  }
+}
+
+/* Globe hover labels (rendered by globe.gl's float-tooltip). */
+body .float-tooltip-kap {
+  padding: 6px 9px;
+  border: 1px solid var(--color-line-strong);
+  border-radius: 6px;
+  background: color-mix(in oklab, var(--color-space) 92%, transparent);
+  color: var(--color-fg);
+  font: 13px/1.4 var(--font-sans);
+  max-width: 280px;
+}
+body .float-tooltip-kap .muted {
+  color: var(--color-fg-3);
+}
+
+/* Projectors and big displays: scale the whole rem-based system up a step. */
+@media (min-width: 1800px) {
+  html {
+    font-size: 17px;
+  }
 }
