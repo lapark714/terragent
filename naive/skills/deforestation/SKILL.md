@@ -60,6 +60,15 @@ No accusations: we describe what the imagery shows, never who is at fault.
 
 ## Price
 
-- Quote = data + analysis cost + margin (pricing agent). Plot or supply-region check from free data: from $49 per region.
-- Batch of supplier plots: price per plot, from $29.
+- Only the investigation (planning and comparing sources) is free; its output is the quote. Every answer is paid.
+- The quote offers 1-3 options, priced per job by the server (terragent.price_options: data + analysis + risk buffer + margin);
+  the pricing agent writes labels and notes, never prices. The cheapest option is never below $29.
+- Nothing runs until the customer accepts one option (a reply naming A/B/C, a plain "yes" for the recommended one, or the
+  accept link). Paid data is bought by a founder only after that acceptance; reports carry only derived results from it.
+- Recommend the cheapest option that answers the question; when free data can't (resolution, clouds, no recent scene),
+  recommend the paid option and say why.
+- Typical options: A = check of a plot or supply region against the cut-off from free 10 m data (two dates; from $29);
+  B = sub-metre archive when clearings under about 0.1 ha matter; a multi-year time series (more dates) or a large region
+  (more compute) costs more.
+- Batch of supplier plots: one quote for the batch, priced per job.
 - Monitoring (re-check plots each month and alert on new loss): $49 per site per month.

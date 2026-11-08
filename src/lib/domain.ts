@@ -283,15 +283,79 @@ export const QuoteLine = z.object({
   amount_usd: z.number(),
 });
 
+/**
+ * Pricing v2 (NOTES 2026-11-08): a quote offers 1–3 options, priced bottom-up by the server
+ * (src/lib/pipeline/pricing-engine.ts). Nothing beyond the free investigation runs until the customer accepts one.
+ */
+export const QUOTE_OPTION_IDS = ["A", "B", "C"] as const;
+export const QuoteOptionId = z.enum(QUOTE_OPTION_IDS);
+export type QuoteOptionId = z.infer<typeof QuoteOptionId>;
+
+export const QUOTE_OPTION_KINDS = ["free_data", "archive", "tasking", "mixed"] as const;
+export const QuoteOptionKind = z.enum(QUOTE_OPTION_KINDS);
+export type QuoteOptionKind = z.infer<typeof QuoteOptionKind>;
+
+const UsdRange = z.tuple([z.number().nonnegative(), z.number().nonnegative()]);
+
+/** One data purchase (or free source) inside an option. */
+export const QuoteOptionData = z.object({
+  provider_id: z.string().describe("registry id from list_providers"),
+  product: z.string().describe('e.g. "Sentinel-2 L2A scenes", "archive 0.5 m", "tasking 0.5 m" (the word tasking marks a new capture)'),
+  data_type: DataType,
+  resolution_m: z.number().positive(),
+  epochs: z.number().int().positive().describe("dates / scenes of this item"),
+  area_km2: z.number().positive(),
+  billable_km2: z.number().nonnegative().describe("max(area, provider minimum order)"),
+  unit_price_usd: z.number().nonnegative().nullable().describe("USD per km² per epoch; null when the supplier publishes no price"),
+  data_cost_usd: z.number().nonnegative().nullable(),
+  data_cost_range_usd: UsdRange.nullable().describe("set instead of data_cost_usd when the price is unknown"),
+  needs_supplier_quote: z.boolean(),
+});
+export type QuoteOptionData = z.infer<typeof QuoteOptionData>;
+
+export const QuoteOption = z
+  .object({
+    option_id: QuoteOptionId,
+    label: z.string().min(2).max(120),
+    answers: z.string().min(2).max(600).describe("what this option can answer"),
+    kind: QuoteOptionKind,
+    data: z.array(QuoteOptionData),
+    analysis_cost_usd: z.number().nonnegative(),
+    risk_buffer_usd: z.number().nonnegative(),
+    margin_usd: z.number().nonnegative(),
+    price_usd: z.number().positive().nullable(),
+    price_range_usd: UsdRange.nullable().describe("set instead of price_usd when any data cost is unknown"),
+    delivery_time: z.string().min(2).max(200),
+    confidence: Confidence,
+    notes: z.array(z.string().max(500)).max(12),
+  })
+  .superRefine((o, ctx) => {
+    if ((o.price_usd === null) === (o.price_range_usd === null)) {
+      ctx.addIssue({ code: "custom", path: ["price_usd"], message: "set exactly one of price_usd and price_range_usd" });
+    }
+  });
+export type QuoteOption = z.infer<typeof QuoteOption>;
+
+/** The lowest price an option can cost the customer (its price, or the low end of its range). */
+export const optionPriceLow = (o: Pick<QuoteOption, "price_usd" | "price_range_usd">): number =>
+  o.price_usd ?? o.price_range_usd?.[0] ?? 0;
+
 export const Quote = z.object({
   request_id: z.string(),
   data_cost_usd: z.number().nonnegative(),
   analysis_cost_usd: z.number().nonnegative(),
   margin_usd: z.number().nonnegative(),
   price_usd: z.number().nonnegative(),
+  /** Always false since pricing v2: no price starts work without the customer's acceptance. Kept for old rows. */
   auto_approved: z.boolean(),
   needs_approval_reason: z.string().nullable(),
   line_items: z.array(QuoteLine),
+  // Pricing v2 (optional so pre-v2 rows still parse). The four money fields above mirror the recommended option.
+  options: z.array(QuoteOption).max(3).optional(),
+  recommended_option_id: QuoteOptionId.nullable().optional(),
+  accepted_option_id: QuoteOptionId.nullable().optional(),
+  accepted_at: z.string().nullable().optional(),
+  valid_until: z.string().nullable().optional(),
 });
 export type Quote = z.infer<typeof Quote>;
 

@@ -6,6 +6,7 @@ import { logDecision } from "../events";
 import { listDueMonitors } from "../outbound/monitors";
 import { saveAcquisitionPlan } from "./acquisition";
 import { getAnalysisJob, MONITOR_DEFAULT_WINDOW_DAYS, MONITOR_LOOKBACK_DAYS, monitorAfterWindow, saveAnalysis } from "./analyses";
+import { acceptQuote } from "./acceptance";
 import { createMonitor, DEFAULT_MONITOR_CADENCE } from "./monitors";
 import { createQuote } from "./quotes";
 import { saveReportDraft } from "./reports";
@@ -25,9 +26,11 @@ beforeEach(() => vi.clearAllMocks());
 afterEach(() => vi.unstubAllEnvs());
 
 const db = () => getDb();
+/** The customer's reply accepting the monthly price (create_monitor's evidence). */
+const YES = "Yes, keep watching it at $49 a month";
 
-/** A screened, quoted, analysed request; `delivered` closes it the way deliver_report would. */
-async function analysed(o: { delivered?: boolean; freeSample?: boolean; prospectId?: string } = {}) {
+/** A screened, quoted (and accepted unless `accepted` is false), analysed request; `delivered` closes it the way deliver_report would. */
+async function analysed(o: { delivered?: boolean; freeSample?: boolean; prospectId?: string; accepted?: boolean } = {}) {
   const req = await createRequest({
     question: "Did the fire burn our depot?", lat: SITE.lat, lon: SITE.lon, source: o.freeSample ? "signal" : "portal", email: "ops@depot.test",
     isFreeSample: o.freeSample, prospectId: o.prospectId, playbook: o.freeSample ? "disasters" : undefined,
@@ -36,7 +39,10 @@ async function analysed(o: { delivered?: boolean; freeSample?: boolean; prospect
   await saveDataSpec(sampleSpec(req.id), "planner");
   for (const kind of ["free_vs_paid", "source_selection"] as const) await logDecision({ requestId: req.id, kind, choice: "free", reasoning: "Sentinel-2 is enough", agent: "acquisition" });
   await saveAcquisitionPlan(samplePlan(req.id), "acquisition");
-  if (!o.freeSample) await createQuote({ requestId: req.id }, "pricing");
+  if (!o.freeSample) {
+    await createQuote({ requestId: req.id }, "pricing");
+    if (o.accepted !== false) await acceptQuote({ requestId: req.id, actor: "comms-customer", evidence: "Yes, go ahead" });
+  }
   await saveAnalysis({ requestId: req.id, result: sampleAnalysis(), fileIds: SAMPLE_FILE_IDS }, "analytics");
   if (o.delivered) await (await db()).query("UPDATE requests SET status = 'delivered' WHERE id = $1", [req.id]);
   return req;
@@ -58,10 +64,24 @@ describe("monitorAfterWindow", () => {
   });
 });
 
+describe("create_monitor is a paid subscription (pricing v2)", () => {
+  it("needs an accepted quote option and the customer's words accepting the monthly price", async () => {
+    const quoted = await analysed({ accepted: false });
+    await expect(createMonitor({ requestId: quoted.id, metric: "dnbr_mean", evidence: YES }, "comms-customer")).rejects.toThrow(/accepts an option/);
+    const req = await analysed({ delivered: true });
+    await expect(createMonitor({ requestId: req.id, metric: "dnbr_mean" }, "comms-customer")).rejects.toThrow(/\$49 per site per month/);
+    const m = await createMonitor({ requestId: req.id, metric: "dnbr_mean", evidence: "Yes please (ops@depot.test), $49/month is fine" }, "comms-customer");
+    const [d] = await (await db()).query<{ reasoning: string }>("SELECT reasoning FROM decisions WHERE request_id = $1 AND kind = 'monitoring'", [req.id]);
+    expect(d.reasoning).toMatch(/accepted monitoring at \$49 per site per month/);
+    expect(d.reasoning).not.toContain("ops@depot.test");
+    expect(m.price_per_month_usd).toBe(49);
+  });
+});
+
 describe("create_monitor defaults", () => {
   it("re-checks every 12 hours, is never 'checked' at creation, and is due on the next monitors run", async () => {
     const req = await analysed({ delivered: true });
-    const m = await createMonitor({ requestId: req.id, metric: "dnbr_mean" }, "comms-customer");
+    const m = await createMonitor({ requestId: req.id, metric: "dnbr_mean", evidence: YES }, "comms-customer");
     expect(m.cadence).toBe(DEFAULT_MONITOR_CADENCE);
     expect(DEFAULT_MONITOR_CADENCE).toBe("0 */12 * * *");
     const [row] = await (await db()).query<{ last_checked_at: Date | null; last_scene_date: string }>(
@@ -76,9 +96,9 @@ describe("create_monitor defaults", () => {
 
   it("takes MONITOR_DEFAULT_CADENCE from the environment, ignoring a malformed value", async () => {
     vi.stubEnv("MONITOR_DEFAULT_CADENCE", "0 */4 * * *");
-    expect((await createMonitor({ requestId: (await analysed()).id, metric: "dnbr_mean" }, "comms-customer")).cadence).toBe("0 */4 * * *");
+    expect((await createMonitor({ requestId: (await analysed()).id, metric: "dnbr_mean", evidence: YES }, "comms-customer")).cadence).toBe("0 */4 * * *");
     vi.stubEnv("MONITOR_DEFAULT_CADENCE", "often");
-    expect((await createMonitor({ requestId: (await analysed()).id, metric: "dnbr_mean" }, "comms-customer")).cadence).toBe(DEFAULT_MONITOR_CADENCE);
+    expect((await createMonitor({ requestId: (await analysed()).id, metric: "dnbr_mean", evidence: YES }, "comms-customer")).cadence).toBe(DEFAULT_MONITOR_CADENCE);
   });
 });
 
@@ -86,7 +106,7 @@ describe("get_analysis_job in monitor mode", () => {
   it("re-checks a delivered request: baseline kept, after window re-opened, no pinned after scene, own job file", async () => {
     const req = await analysed({ delivered: true });
     await expect(getAnalysisJob(req.id)).rejects.toThrow(/is delivered/); // a plain job still refuses a finished request
-    const { monitor_id } = await createMonitor({ requestId: req.id, metric: "dnbr_mean" }, "comms-customer");
+    const { monitor_id } = await createMonitor({ requestId: req.id, metric: "dnbr_mean", evidence: YES }, "comms-customer");
 
     const now = new Date("2025-02-20T10:00:00Z");
     const res = await getAnalysisJob(req.id, { monitorId: monitor_id, now });
@@ -105,14 +125,14 @@ describe("get_analysis_job in monitor mode", () => {
 
   it("measures after_mean for a level metric", async () => {
     const req = await analysed({ delivered: true });
-    const { monitor_id } = await createMonitor({ requestId: req.id, metric: "nbr_after_mean" }, "comms-customer");
+    const { monitor_id } = await createMonitor({ requestId: req.id, metric: "nbr_after_mean", evidence: YES }, "comms-customer");
     expect(await getAnalysisJob(req.id, { monitorId: monitor_id })).toMatchObject({ measure: { field: "after_mean" } });
   });
 
   it("refuses an unknown monitor, another request's monitor and a stopped one", async () => {
     const a = await analysed({ delivered: true });
     const b = await analysed({ delivered: true });
-    const { monitor_id } = await createMonitor({ requestId: a.id, metric: "dnbr_mean" }, "comms-customer");
+    const { monitor_id } = await createMonitor({ requestId: a.id, metric: "dnbr_mean", evidence: YES }, "comms-customer");
     await expect(getAnalysisJob(a.id, { monitorId: "mon_nope" })).rejects.toThrow(/Unknown monitor/);
     await expect(getAnalysisJob(b.id, { monitorId: monitor_id })).rejects.toThrow(new RegExp(`watches ${a.id}`));
     await (await db()).query("UPDATE monitors SET status = 'cancelled' WHERE id = $1", [monitor_id]);

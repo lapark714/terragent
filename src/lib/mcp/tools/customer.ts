@@ -1,6 +1,10 @@
-/** Catalog group "customer": Comms 2 (hello@) screening, replies and updates, quotes, delivery, opt-outs and monitoring. */
+/**
+ * Catalog group "customer": Comms 2 (hello@) screening, replies and updates, quotes (send, and accept_quote: the
+ * customer's chosen option, the only way work starts), delivery, opt-outs and monitoring.
+ */
 import { z } from "zod";
-import { Recipe, ScreeningResult } from "../../domain";
+import { QuoteOptionId, Recipe, ScreeningResult } from "../../domain";
+import { acceptQuote, QuoteAcceptError } from "../../pipeline/acceptance";
 import { deliverReport, recordCustomerOptOut, sendCustomerMessage, sendQuote } from "../../pipeline/deliver";
 import { createMonitor } from "../../pipeline/monitors";
 import { recordScreening } from "../../pipeline/screening";
@@ -28,6 +32,23 @@ export function register(r: ToolRegistrar): void {
 
   r.tool("send_quote", { request_id: z.string() }, async ({ request_id }, ctx) => sendQuote(request_id, ctx.agent));
 
+  r.tool(
+    "accept_quote",
+    {
+      request_id: z.string(),
+      option_id: QuoteOptionId.optional().describe("the option the customer named (A, B or C); leave out on a plain yes to accept the recommended one"),
+      evidence: z.string().min(2).max(300).describe("the customer's words of acceptance, briefly quoted (no names, emails or other personal data)"),
+    },
+    async (a, ctx) => {
+      try {
+        return await acceptQuote({ requestId: a.request_id, optionId: a.option_id, actor: ctx.agent, evidence: a.evidence });
+      } catch (e) {
+        if (e instanceof QuoteAcceptError) return { error: e.message, code: e.code };
+        throw e;
+      }
+    },
+  );
+
   r.tool("deliver_report", { request_id: z.string() }, async ({ request_id }, ctx) => deliverReport(request_id, ctx.agent));
 
   r.tool(
@@ -48,7 +69,11 @@ export function register(r: ToolRegistrar): void {
       threshold: z.number().nullable().optional().describe("change that triggers a follow-up (default: the recipe's change threshold)"),
       cadence: z.string().optional().describe('5-field cron in UTC; leave it out for the default (every 12 hours, "0 */12 * * *")'),
       recipe: Recipe.optional(),
+      evidence: z.string().max(300).optional().describe(
+        "the customer's words accepting monitoring at its monthly price, briefly quoted (no names, emails or other personal data); required",
+      ),
     },
-    async (a, ctx) => createMonitor({ requestId: a.request_id, metric: a.metric, threshold: a.threshold, cadence: a.cadence, recipe: a.recipe }, ctx.agent),
+    async (a, ctx) =>
+      createMonitor({ requestId: a.request_id, metric: a.metric, threshold: a.threshold, cadence: a.cadence, recipe: a.recipe, evidence: a.evidence }, ctx.agent),
   );
 }

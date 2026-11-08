@@ -4,7 +4,7 @@
  * Tone: plain, warm, specific, short. Bodies are plain text first; HTML is the same words, lightly styled.
  */
 import { PRICING } from "../config";
-import { env } from "../env";
+import { env, publicBaseUrl } from "../env";
 import { DEFAULT_FOLLOWUP } from "./template-library";
 
 export interface RenderedEmail { subject: string; text: string; html: string }
@@ -208,14 +208,131 @@ export function renderReportDelivery(a: {
   ], { images: reportImages(r) });
 }
 
-export function renderQuote(a: { customerName?: string | null; question: string; quote: { price_usd: number; line_items: { label: string; amount_usd: number }[]; auto_approved: boolean }; paymentLink?: string | null; requestId: string }): RenderedEmail {
-  const lines = a.quote.line_items.map((l) => `- ${l.label}: ${usdFmt(l.amount_usd)}`).join("\n");
+// ---------------------------------------------------------------------------
+// Quotes (pricing v2): 1–3 options; nothing beyond the free investigation runs until the customer accepts one.
+// ---------------------------------------------------------------------------
+
+/**
+ * The fields of a quote option (QuoteOption in src/lib/domain.ts) the email needs. Structural on purpose, like
+ * ReportForEmail: the stored option carries more (costs, margin, supplier ids) and none of that is emailed.
+ */
+export interface QuoteOptionForEmail {
+  option_id: string;
+  label: string;
+  answers: string;
+  kind: string;
+  data: { data_type: string; resolution_m: number; epochs: number; needs_supplier_quote?: boolean }[];
+  price_usd: number | null;
+  price_range_usd: readonly [number, number] | null;
+  delivery_time: string;
+}
+
+/** The page where a customer picks an option (src/app/quote/[token]/page.tsx); the token is quotes.accept_token. */
+export const quoteAcceptUrl = (token: string) => `${publicBaseUrl()}/quote/${encodeURIComponent(token)}`;
+
+const KIND_TEXT: Record<string, string> = {
+  free_data: "free public satellite data",
+  archive: "archive imagery we buy for you",
+  tasking: "a new satellite capture we order for you",
+  mixed: "free and paid data combined",
+};
+
+/** "$29", or "$180 to $260 (estimate…)" when part of the data has no confirmed supplier price yet. */
+export function optionPriceText(o: { price_usd: number | null; price_range_usd: readonly [number, number] | null }): string {
+  if (o.price_usd !== null && o.price_usd !== undefined) return usdFmt(o.price_usd);
+  if (o.price_range_usd) {
+    return `${usdFmt(o.price_range_usd[0])} to ${usdFmt(o.price_range_usd[1])} (estimate: the supplier's exact price isn't confirmed yet)`;
+  }
+  return "on request";
+}
+
+export const resolutionText = (m: number) => `${Number(m.toFixed(m < 1 ? 2 : 1))} m`;
+
+/** "free public satellite data, 10 m detail, 2 dates" from the option's data items (finest resolution, most dates). */
+export function optionDataText(o: Pick<QuoteOptionForEmail, "kind" | "data">): string {
+  const res = o.data.map((d) => d.resolution_m).filter((r) => Number.isFinite(r) && r > 0);
+  const epochs = Math.max(0, ...o.data.map((d) => d.epochs).filter((e) => Number.isFinite(e)));
+  return [
+    KIND_TEXT[o.kind] ?? o.kind.replace(/_/g, " "),
+    res.length ? `${resolutionText(Math.min(...res))} detail` : "",
+    epochs ? `${epochs} date${epochs === 1 ? "" : "s"}` : "",
+  ].filter(Boolean).join(", ");
+}
+
+const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+/** "14 Nov 2026" (UTC), or null for a missing / unparseable date. */
+export function dayText(v: string | Date | null | undefined): string | null {
+  if (!v) return null;
+  const d = v instanceof Date ? v : new Date(v);
+  return Number.isNaN(d.getTime()) ? null : `${d.getUTCDate()} ${MONTHS[d.getUTCMonth()]} ${d.getUTCFullYear()}`;
+}
+
+/** "A", "A or B", "A, B or C". */
+const orList = (ids: string[]) => (ids.length <= 1 ? ids.join("") : `${ids.slice(0, -1).join(", ")} or ${ids.at(-1)}`);
+
+function optionLine(o: QuoteOptionForEmail, recommended: boolean): string {
+  const answers = o.answers.trim().replace(/\s+/g, " ").replace(/\.$/, "");
+  return [
+    `- Option ${o.option_id}${recommended ? " (recommended)" : ""}: ${o.label.trim().replace(/\.$/, "")}.`,
+    answers ? `Answers: ${answers}.` : "",
+    `${capitalise(optionDataText(o))}.`,
+    o.delivery_time.trim() ? `Delivery: ${o.delivery_time.trim().replace(/\.$/, "")}.` : "",
+    `Price: ${optionPriceText(o)}.`,
+  ].filter(Boolean).join(" ");
+}
+
+export interface QuoteForEmail {
+  /** Mirrors the recommended option; used only by a quote without options (before pricing v2). */
+  price_usd?: number | null;
+  line_items?: { label: string; amount_usd: number }[];
+  auto_approved?: boolean;
+  options?: readonly QuoteOptionForEmail[] | null;
+  recommended_option_id?: string | null;
+  valid_until?: string | Date | null;
+  /** quotes.accept_token: the accept link is built from it unless `acceptUrl` is given. */
+  accept_token?: string | null;
+}
+
+/**
+ * The quote email. With options (pricing v2): one line per option (what it answers, detail, delivery, price or
+ * range), the recommended one marked, how to accept (reply "yes" / a letter, or the accept link), validity, and
+ * that paid data is bought only after acceptance. A quote without options keeps the single-price layout.
+ */
+export function renderQuote(a: {
+  customerName?: string | null; question: string; quote: QuoteForEmail; paymentLink?: string | null; requestId: string;
+  acceptUrl?: string | null;
+}): RenderedEmail {
+  const options = a.quote.options ?? [];
+  if (!options.length) return renderSinglePriceQuote(a);
+
+  const ids = options.map((o) => o.option_id);
+  const recommended = ids.includes(a.quote.recommended_option_id ?? "") ? a.quote.recommended_option_id! : ids[0];
+  const acceptUrl = a.acceptUrl ?? (a.quote.accept_token ? quoteAcceptUrl(a.quote.accept_token) : null);
+  const paid = options.some((o) => o.kind !== "free_data");
+  const until = dayText(a.quote.valid_until);
+  const reply = ids.length > 1
+    ? `To go ahead, reply "yes" for option ${recommended}, or reply with the letter of the option you want (${orList(ids)}).`
+    : `To go ahead, reply "yes" to this email.`;
+  return compose(`Your Terragent quote (${a.requestId})`, [
+    greeting(a.customerName),
+    `Thanks for your question: "${a.question.trim()}"`,
+    `We've checked which satellite data can answer it and priced ${ids.length > 1 ? `${ids.length} options` : "the work"} below. ` +
+      "That check is free. Nothing else happens, and nothing is bought or charged, until you choose an option.",
+    options.map((o) => optionLine(o, ids.length > 1 && o.option_id === recommended)).join("\n"),
+    `${reply}${acceptUrl ? ` You can also choose online: ${acceptUrl}` : ""}`,
+    paid ? "We buy paid imagery only after you accept an option that needs it." : "",
+    `${until ? `This quote is valid until ${until}. ` : ""}Reference: ${a.requestId}`,
+  ]);
+}
+
+function renderSinglePriceQuote(a: { customerName?: string | null; question: string; quote: QuoteForEmail; paymentLink?: string | null; requestId: string }): RenderedEmail {
+  const lines = (a.quote.line_items ?? []).map((l) => `- ${l.label}: ${usdFmt(l.amount_usd)}`).join("\n");
   return compose(`Your Terragent quote (${a.requestId})`, [
     greeting(a.customerName),
     `Here's our quote for your question: "${a.question.trim()}"`,
     lines,
-    `Total: ${usdFmt(a.quote.price_usd)}`,
-    `To go ahead, reply "yes" to this email${a.paymentLink ? ` or pay here: ${a.paymentLink}` : ""}. We start as soon as you confirm and send the answer to this thread.`,
+    `Total: ${usdFmt(a.quote.price_usd ?? 0)}`,
+    `To go ahead, reply "yes" to this email${a.paymentLink ? ` or pay here: ${a.paymentLink}` : ""}. Nothing starts until you confirm; then we send the answer to this thread.`,
     `Reference: ${a.requestId}`,
   ]);
 }

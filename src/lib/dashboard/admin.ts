@@ -1,7 +1,9 @@
 /**
  * Founder actions from the dashboard. Every one is authenticated with ADMIN_TOKEN and leaves exactly one
  * intervention (actor + reason), because judges count human steps. Approving an order records the
- * decision only: buying data stays a manual founder step (CLAUDE.md hard rules). Recording a payment is
+ * decision only: buying data stays a manual founder step (CLAUDE.md hard rules), and an order can only be approved
+ * for a quote option the customer accepted (pipeline/orders.ts paidDataBlockedReason). Marking an order delivered
+ * (the founder bought it and the data arrived) starts the analysis of that accepted option. Recording a payment is
  * bookkeeping: customers pay through a founder's Stripe link, and nothing reports that back automatically.
  */
 import { createHash, timingSafeEqual } from "node:crypto";
@@ -11,7 +13,9 @@ import { Inbox } from "../domain";
 import { env } from "../env";
 import { logDecision, logEvent, logIntervention } from "../events";
 import { decideApproval, listPendingApprovals, type PendingApproval } from "../naive/sessions";
+import { markOrderDelivered, paidDataBlockedReason } from "../pipeline/orders";
 import { approveQuote, rejectQuote } from "../pipeline/quotes";
+import { getRequest } from "../pipeline/requests";
 import { SETTING } from "../settings";
 import { getInboxArmed, NAIVE_APPROVALS_CACHE_KEY } from "./approvals";
 import { invalidateDashboard } from "./cache";
@@ -33,7 +37,16 @@ type Who = { actor: string; reason: string };
 
 export const AdminAction = z.discriminatedUnion("action", [
   z.object({ action: z.literal("naive-approval"), session_id: z.string().min(1), tool_call_id: z.string().min(1), decision: z.enum(["allow", "deny"]), ...who }),
-  z.object({ action: z.literal("order"), order_id: z.string().min(1), decision: z.enum(["approve", "reject"]), ...who }),
+  z.object({
+    action: z.literal("order"), order_id: z.string().min(1),
+    /** delivered = a founder bought the data by hand and it arrived: the accepted option's analysis starts. */
+    decision: z.enum(["approve", "reject", "delivered"]),
+    /** delivered only: Naïve file ids of the purchased imagery (for the interpreter; never sent to the customer). */
+    file_ids: z.array(z.string().regex(/^fil_[\w-]+$/)).max(20).optional(),
+    /** delivered only: where the data is or what arrived, in a few words (no personal data). */
+    note: z.string().trim().max(500).optional(),
+    ...who,
+  }),
   z.object({ action: z.literal("quote"), quote_id: z.string().min(1), decision: z.enum(["approve", "reject"]), ...who }),
   z.object({ action: z.literal("template"), template_id: z.string().min(1), decision: z.enum(["approve", "retire"]), ...who }),
   z.object({ action: z.literal("inbox"), inbox: Inbox, armed: z.boolean(), ...who }),
@@ -100,6 +113,13 @@ async function decideInNaive(parked: PendingApproval, decision: "allow" | "deny"
 async function decideOrder(orderId: string, decision: "approve" | "reject", by: Who, parked?: PendingApproval) {
   const db = await getDb();
   const status = decision === "approve" ? "approved" : "rejected";
+  if (decision === "approve") {
+    // Paid data only for an option the customer accepted (pricing v2); rejecting is always allowed.
+    const [held] = await db.query<{ request_id: string; provider_id: string }>("SELECT request_id, provider_id FROM orders WHERE id = $1", [orderId]);
+    const req = held ? await getRequest(held.request_id) : null;
+    const blocked = req ? await paidDataBlockedReason(req, held.provider_id) : null;
+    if (blocked) throw new AdminConflict(blocked);
+  }
   const [order] = await db.query<{ request_id: string; provider_id: string; est_cost_usd: unknown }>(
     `UPDATE orders SET status = $2, approved_by = $3, decided_at = now(), updated_at = now()
      WHERE id = $1 AND status = 'awaiting_approval' RETURNING request_id, provider_id, est_cost_usd`,
@@ -124,6 +144,21 @@ async function decideOrder(orderId: string, decision: "approve" | "reject", by: 
   });
   await logEvent(`order.${status}`, actor, { order_id: orderId, approved_by: by.actor, purchased: false, via: parked ? "naive" : "dashboard" }, order.request_id);
   return { done: decision === "approve" ? "Order approved. Buying the data is still done by hand." : "Order rejected" };
+}
+
+/** A founder bought the data and it arrived: one intervention, then the order service starts the analysis when nothing else waits. */
+async function deliverOrder(a: Extract<AdminAction, { action: "order" }>) {
+  let res: Awaited<ReturnType<typeof markOrderDelivered>>;
+  try {
+    res = await markOrderDelivered({ orderId: a.order_id, founder: a.actor, fileIds: a.file_ids, note: a.note });
+  } catch (e) {
+    throw new AdminConflict(e instanceof Error ? e.message : String(e));
+  }
+  if (res.already) throw new AdminConflict("That order is already marked delivered.");
+  await logIntervention({ actor: a.actor, action: "order_delivered", reason: a.reason, requestId: res.request_id, refId: a.order_id });
+  if (res.analysis_started) return { done: "Marked delivered. The analysis has started." };
+  if ("warning" in res && res.warning) return { done: `Marked delivered, but starting the analysis failed: ${res.warning}` };
+  return { done: res.waiting_for.length ? `Marked delivered. The analysis starts once order(s) ${res.waiting_for.join(", ")} arrive too.` : "Marked delivered." };
 }
 
 async function decideNaiveCall(a: Extract<AdminAction, { action: "naive-approval" }>) {
@@ -264,6 +299,7 @@ async function dispatch(a: AdminAction): Promise<{ done: string }> {
     case "naive-approval":
       return decideNaiveCall(a);
     case "order":
+      if (a.decision === "delivered") return deliverOrder(a);
       return decideOrder(a.order_id, a.decision, a, await parkedOrderCall(a.order_id));
     case "quote":
       return decideHeldQuote(a);

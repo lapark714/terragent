@@ -12,7 +12,7 @@ import { Inbox, TERMINAL_STATUSES } from "../domain";
 import { logEvent } from "../events";
 import { num, query } from "./db";
 import { priceBlockedReason } from "./gates";
-import { getQuote } from "./quotes";
+import { ACCEPTABLE_QUOTE_STATUSES, getQuote, isQuoteExpired, quoteForEmail } from "./quotes";
 import { latestReport, reportView } from "./reports";
 import { addNote, getRequest, isTerminal, requireRequest, setStatus, type RequestRow } from "./requests";
 
@@ -100,16 +100,28 @@ export async function sendCustomerMessage(a: { requestId: string; kind: Customer
   };
 }
 
+/**
+ * The quote email: every option (what it answers, detail, delivery, price or range), the recommended one, how to
+ * accept (reply, or the accept link), the validity, and that paid data is bought only after acceptance.
+ */
 export async function sendQuote(requestId: string, actor: string) {
   const req = await requireRequest(requestId);
   assertOpen(req);
   const quote = req.quote_id ? await getQuote(req.quote_id) : null;
   if (!quote) throw new Error("No quote yet; pricing must create_quote first.");
-  if (quote.status === "needs_approval") throw new Error(`Quote ${quote.id} is above the cap; a founder must approve it first.`);
-  if (!["approved", "sent"].includes(quote.status)) throw new Error(`Quote ${quote.id} is ${quote.status}; there is nothing to send.`);
+  if (quote.status === "needs_approval") {
+    throw new Error(
+      `Quote ${quote.id} is a pre-v2 quote held for founder review: hand back to pricing (stage pricing) to re-quote it with price_options and create_quote.`,
+    );
+  }
+  if (!(ACCEPTABLE_QUOTE_STATUSES as readonly string[]).includes(quote.status)) throw new Error(`Quote ${quote.id} is ${quote.status}; there is nothing to send.`);
+  if (isQuoteExpired(quote)) {
+    throw new Error(`Quote ${quote.id} expired before it was sent; hand back to pricing (stage pricing) for a fresh quote.`);
+  }
+  const forEmail = quoteForEmail(quote);
   const email = renderQuote({
     customerName: req.customer_name, question: req.question, requestId: req.id, paymentLink: quote.payment_link,
-    quote: { price_usd: num(quote.price_usd) ?? 0, line_items: quote.line_items, auto_approved: quote.auto_approved },
+    quote: forEmail, acceptUrl: forEmail.accept_url,
   });
   const sent = await sendToCustomer(req, email, `${req.id}:quote:${quote.id}`, actor);
   if (sent.status === "sent") {

@@ -5,6 +5,7 @@ import { logDecision, logEvent } from "../events";
 import { latestAnalysis } from "./analyses";
 import { errorMessage, json, query, queryOne } from "./db";
 import { attachReportToIndex, isChangeMetric } from "./earth-index";
+import { assertPriceCleared } from "./gates";
 import { createMonitor } from "./monitors";
 import { requireReport } from "./reports";
 import { addNote, handoff, isTerminal, requireRequest, setStatus, type RequestRow } from "./requests";
@@ -15,6 +16,7 @@ export async function saveVerdict(input: Verdict, actor: string) {
   const report = await requireReport(v.report_id);
   const req = await requireRequest(report.request_id);
   if (isTerminal(req)) throw new Error(`Request ${req.id} is ${req.status}.`);
+  await assertPriceCleared(req); // pricing v2: no review work before the customer accepted an option
   if (report.verifier_status !== "pending") throw new Error(`Report ${report.id} was already graded (${report.verifier_status}).`);
   if (req.report_id && req.report_id !== report.id) throw new Error(`Report ${report.id} is not the latest draft (${req.report_id}).`);
   const missing = VERIFIER_CHECKS.filter((id) => !v.checks.some((c) => c.id === id));

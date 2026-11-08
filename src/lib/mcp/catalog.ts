@@ -96,9 +96,11 @@ export const TOOLS: readonly ToolSpec[] = [
 
   // --- pricing ---------------------------------------------------------------
   { name: "estimate_costs", group: "pricing", agents: ["pricing"], permission: "allow",
-    description: "Real cost so far for a request (Naïve spend) plus estimated remaining analysis cost." },
+    description: "Our real cost so far for a request (Naïve spend) plus estimated remaining analysis cost. Internal view; quotes come from price_options." },
+  { name: "price_options", group: "pricing", agents: ["pricing"], permission: "allow",
+    description: "Price 1–3 quote options bottom-up from the saved data spec, acquisition plan and provider registry (data per km² × dates, analysis, risk buffer, margin; a range when a supplier price is unknown). Returns the options and the recommended one; saves nothing." },
   { name: "create_quote", group: "pricing", agents: ["pricing"], permission: "allow",
-    description: "Create a quote (data + analysis + margin). Under the cap it is auto-approved; above it needs a founder." },
+    description: "Save the quote: 1–3 options from price_options (change labels, answers and notes, never prices or data items) and the recommended one. The server re-prices every option and refuses data items (providers, dates, area, kind) that don't match its own options and prices more than 5% off. Sets a 7-day validity and an accept link, marks the request quoted and hands it to comms-customer. Nothing starts until the customer accepts an option; no founder review." },
 
   // --- analysis: Analytics ---------------------------------------------------
   { name: "get_analysis_job", group: "analysis", agents: ["analytics"], permission: "allow",
@@ -124,13 +126,15 @@ export const TOOLS: readonly ToolSpec[] = [
   { name: "send_customer_message", group: "customer", agents: ["comms-customer"], permission: "allow",
     description: "Reply to the customer in the request's thread from hello@ (clarifying question, refusal, update)." },
   { name: "send_quote", group: "customer", agents: ["comms-customer"], permission: "allow",
-    description: "Send the request's quote to the customer from hello@." },
+    description: "Send the request's quote to the customer from hello@: every option, the recommended one, how to accept (reply or link) and its validity." },
+  { name: "accept_quote", group: "customer", agents: ["comms-customer"], permission: "allow",
+    description: "Record the customer's acceptance of one quote option (the A/B/C they named; a plain yes = the recommended one), with their words as evidence (no personal data). A free-data option starts the analysis; a paid-data option holds the data order for a founder and the analysis waits for the data. The only way work starts." },
   { name: "deliver_report", group: "customer", agents: ["comms-customer"], permission: "allow",
     description: "Deliver a verified report to the customer in the same thread, with images and the report link." },
   { name: "record_opt_out", group: "customer", agents: ["comms-customer"], permission: "allow",
     description: "Honour a customer's request to stop email: add their address to the suppression list and note the request." },
   { name: "create_monitor", group: "customer", agents: ["comms-customer"], permission: "allow",
-    description: "Set up a monitoring job that re-checks a site on a schedule and follows up on change." },
+    description: "Set up a paid monitoring job (per site per month) that re-checks a site on a schedule and follows up on change. Only for a request with an accepted quote option, and only with the customer's words accepting the monthly price as evidence." },
 
   // --- signals: Sourcing ------------------------------------------------------
   { name: "poll_signals", group: "signals", agents: ["sourcing"], permission: "allow",

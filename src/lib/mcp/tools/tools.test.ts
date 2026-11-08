@@ -21,7 +21,10 @@ vi.mock("../../email/send", () => ({
 vi.mock("../../email/threads", () => ({ getThread: vi.fn(async () => ({ thread_id: "thd_1", inbox: "hello", messages: [] })) }));
 vi.mock("../../email/templates", () => {
   const e = (subject: string) => () => ({ subject, text: subject, html: `<p>${subject}</p>` });
-  return { renderClarifyingQuestion: e("question"), renderRefusal: e("refusal"), renderQuote: e("quote"), renderReportDelivery: e("report"), renderSupplierQuoteRequest: e("supplier") };
+  return {
+    renderClarifyingQuestion: e("question"), renderRefusal: e("refusal"), renderQuote: e("quote"), renderReportDelivery: e("report"),
+    renderSupplierQuoteRequest: e("supplier"), quoteAcceptUrl: (token: string) => `https://terragent.test/quote/${token}`,
+  };
 });
 
 const call = (agent: AgentName, tool: string, args: Record<string, unknown>) => runTool(tool, args, { agent }) as Promise<Record<string, unknown>>;
@@ -38,6 +41,12 @@ async function quotedRequest() {
   for (const kind of ["free_vs_paid", "source_selection"] as const) await logDecision({ requestId: req.id, kind, choice: "free", reasoning: "enough", agent: "acquisition" });
   await saveAcquisitionPlan(samplePlan(req.id), "acquisition");
   await call("pricing", "create_quote", { request_id: req.id });
+  return req;
+}
+
+async function acceptedRequest() {
+  const req = await quotedRequest();
+  await call("comms-customer", "accept_quote", { request_id: req.id, evidence: "Yes, go ahead" });
   return req;
 }
 
@@ -68,15 +77,42 @@ describe("customer tools", () => {
   });
 
   it("creates a 12-hourly monitor with the recipe's change threshold and the current baseline, not yet checked", async () => {
-    const req = await quotedRequest();
+    const req = await acceptedRequest();
     await saveAnalysis({ requestId: req.id, result: sampleAnalysis(), fileIds: SAMPLE_FILE_IDS }, "analytics");
-    const res = await call("comms-customer", "create_monitor", { request_id: req.id, metric: "dnbr_mean" });
+    expect((await call("comms-customer", "create_monitor", { request_id: req.id, metric: "dnbr_mean" })).error).toMatch(/Monitoring is paid/);
+    const res = await call("comms-customer", "create_monitor", { request_id: req.id, metric: "dnbr_mean", evidence: "Yes, watch it monthly" });
     expect(res).toMatchObject({ recipe: "burn_severity", threshold: 0.27, cadence: "0 */12 * * *" });
     const [m] = await (await getDb()).query<{ last_value: number; last_scene_date: Date; last_checked_at: Date | null }>(
       "SELECT last_value, last_scene_date, last_checked_at FROM monitors WHERE id = $1", [res.monitor_id]);
     expect(m.last_value).toBeCloseTo(0.174);
     expect(m.last_checked_at).toBeNull();
     expect((await getRequest(req.id))?.monitor_id).toBe(res.monitor_id);
+  });
+});
+
+describe("pricing v2 tools", () => {
+  it("price_options → create_quote (server prices only) → accept_quote, each callable only by its agent", async () => {
+    const req = await createRequest({ question: "Did the fire reach our depot?", lat: SITE.lat, lon: SITE.lon, source: "portal", email: "c@example.com" });
+    await mergeMeta(req.id, { screening: { allowed: true } });
+    await saveDataSpec(sampleSpec(req.id), "planner");
+    for (const kind of ["free_vs_paid", "source_selection"] as const) await logDecision({ requestId: req.id, kind, choice: "free", reasoning: "enough", agent: "acquisition" });
+    await saveAcquisitionPlan(samplePlan(req.id), "acquisition");
+
+    const priced = (await call("pricing", "price_options", { request_id: req.id })) as { options: Record<string, unknown>[]; recommended_option_id: string };
+    expect(priced.recommended_option_id).toBe("A");
+    expect((await call("comms-customer", "price_options", { request_id: req.id })).error).toMatch(/not allowed/);
+
+    const bad = await call("pricing", "create_quote", { request_id: req.id, options: [{ ...priced.options[0], price_usd: 5 }] });
+    expect(bad.error).toMatch(/Prices come from the server/);
+    expect((bad.server_options as { price_usd: number }[])[0].price_usd).toBe(priced.options[0].price_usd);
+    const created = await call("pricing", "create_quote", { request_id: req.id, options: priced.options, recommended_option_id: "A" });
+    expect(created.quote).toMatchObject({ status: "approved", auto_approved: false, recommended_option_id: "A" });
+    expect((await getRequest(req.id))?.status).toBe("quoted");
+
+    expect((await call("pricing", "accept_quote", { request_id: req.id, evidence: "yes" })).error).toMatch(/not allowed/);
+    expect(await call("comms-customer", "accept_quote", { request_id: req.id, evidence: "Yes, go ahead" })).toMatchObject({ option_id: "A", next: "analysis" });
+    expect(await getRequest(req.id)).toMatchObject({ status: "analyzing", owner_agent: "analytics" });
+    expect(await call("comms-customer", "accept_quote", { request_id: req.id, option_id: "B", evidence: "B instead" })).toMatchObject({ code: "already_accepted" });
   });
 });
 

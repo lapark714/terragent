@@ -80,7 +80,7 @@ describe("POST /api/answer", () => {
     expect((await get(body.request_id, otherKey)).status).toBe(404);
   });
 
-  it("shows the caller its quote once priced, so a price held for a founder isn't a silent stall", async () => {
+  it("shows the caller a pre-v2 quote too (no options, no accept link), so it isn't a silent stall", async () => {
     const own = (await createApiKey("quote-reader", 4)).key; // its own key, so the rate-limit test below keeps its count
     const res = await post({ question: "Did the dam overflow?", location: "Oroville, CA" }, own);
     const { request_id } = await res.json();
@@ -95,6 +95,8 @@ describe("POST /api/answer", () => {
     expect(body.quote).toEqual({
       id: "qte_api1", price_usd: 120, status: "needs_approval", auto_approved: false, payment_link: null,
       line_items: [{ label: "Satellite data", amount_usd: 80 }, { label: "Analysis and verified report", amount_usd: 40 }],
+      options: [], recommended_option_id: null, accepted_option_id: null, accepted_at: null, valid_until: null, closed_reason: null,
+      accept_url: null, accept: null,
     });
     expect((await get("req_nosuch0001", own)).status).toBe(404);
     expect((await get(request_id)).status).toBe(404); // another key never sees it

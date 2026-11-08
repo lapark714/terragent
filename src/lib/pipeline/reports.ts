@@ -5,6 +5,7 @@ import { logEvent } from "../events";
 import { newId, newToken } from "../ids";
 import { json, num, query, queryOne } from "./db";
 import { latestAnalysis } from "./analyses";
+import { assertPriceCleared } from "./gates";
 import { isTerminal, requireRequest } from "./requests";
 
 export interface ReportRow {
@@ -55,6 +56,7 @@ export async function saveReportDraft(input: ReportDraft, actor: string) {
   const draft = ReportDraft.parse(input);
   const req = await requireRequest(draft.request_id);
   if (isTerminal(req)) throw new Error(`Request ${req.id} is ${req.status}.`);
+  await assertPriceCleared(req); // pricing v2: no report work before the customer accepted an option
   const analysis = await latestAnalysis(req.id);
   const token = newToken();
   const images = draft.images.map((img) => ({ ...img, url: resolveImageUrl(img.url, token, analysis?.file_ids ?? {}) }));

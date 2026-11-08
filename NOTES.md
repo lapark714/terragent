@@ -32,6 +32,8 @@ Verified platform reference: [docs/platform/](docs/platform/README.md).
 | H7 | Vercel account linked to GitHub | Laurence (repo owner) | step 7 deploy (first public deploy needs your OK) |
 | H8 | Approve first outbound email template | any founder, in dashboard | step 6 outreach |
 | H9 | Stripe Payment Link (optional) → `PAYMENT_LINK_URL` | whoever holds the Stripe account | quotes show a pay link |
+| H10 | Pricing v2 copy on the public pages: the landing page's API section (`src/app/page.tsx`) still says a quote up to $50 "goes ahead at once" and that an API quote above $50 can't reach a client without an email; the terms' "Prices and payment" (`src/app/terms/page.tsx`) says up to $50 "the price comes with the report". Both are wrong now: every quote waits for an accepted option, and API clients accept from their status response. Suggested text is in docs/handoff/pricing-v2-ui.md §7. | Aiden (owns those pages) | public copy matches what the code does |
+| H11 | Dashboard for pricing v2: `ApprovalsPanel` still says "Quotes at or under the auto-approve cap go out on their own", and paid orders need a **Mark delivered** button (admin action `order` with `decision: "delivered"`, which starts the analysis). Approving an order before the customer accepted its option now returns 409. Details in docs/handoff/pricing-v2-ui.md §5. | Aarush (owns the dashboard) | founders can finish a paid option from the dashboard |
 
 _This table is refreshed after platform research; see docs/platform/README.md for the verified list._
 
@@ -52,7 +54,32 @@ _This table is refreshed after platform research; see docs/platform/README.md fo
   The investigation (planning + source comparison) is free; its output is a quote of 1–3 options priced bottom-up
   (data per km² × dates × data types + analysis + risk + margin, ranges when supplier prices are unknown). Work starts
   only when the customer accepts an option (email reply or accept link). Quotes go out automatically (no founder
-  review). Free samples for outbound prospects stay the one exception (marketing cost). Being built now.
+  review). Free samples for outbound prospects stay the one exception (marketing cost).
+  **Shipped 2026-11-08 ~05:45 UTC** (migration 080, docs/ARCHITECTURE.md §3 and §5, UI note docs/handoff/pricing-v2-ui.md):
+  - Pricing: `price_options` / `create_quote` (src/lib/pipeline/{pricing-engine,quotes}.ts). The server re-prices every
+    option and refuses an agent's option whose data items (provider, free / archive / tasking, dates), area (< 95 % of the
+    AOI) or kind don't match its own, or whose price is > 5 % off. Without `recommended_option_id` it recommends the
+    server's pick (the cheapest option that answers), not the cheapest. Dates are capped at what the pipeline compares
+    today (`PRICING.maxAnalysisEpochs` = 2, before/after); a longer series is priced and described as first vs last date.
+  - Acceptance (src/lib/pipeline/acceptance.ts): `accept_quote` (email reply), the accept link (`/quote/<token>`,
+    `POST /api/quotes/accept`) and API clients (`GET /api/answer/{id}` now carries options, `accept_url` and a ready
+    `accept` call) share one service. Free-data option → analytics. Paid option → held order per paid item + a
+    coordinator card; nothing runs on free data meanwhile; a founder buys by hand and marks the order delivered
+    (dashboard action `order` / `delivered`), which starts analytics.
+  - Gates in code: `assertPriceCleared` on handoffs to analytics / interpreter / verifier and the work stages, the
+    analysis job, report draft, verdict, delivery and `create_monitor`; `paidDataBlockedReason` on prepare / place /
+    dashboard approve / mark delivered. `PRICING.autoApproveCapUsd` is display-only; pre-v2 `needs_approval` quotes can
+    still be released by a founder but only to be sent, never to start work.
+  - Known gap: the pipeline measures on free Sentinel-2 / Landsat only, so a paid option's answers say measurements come
+    from free public data with the purchased imagery reviewed for detail (derived results only).
+- **2026-11-08 ~05:45 UTC — Monitoring is a paid subscription the customer accepts (build agent; founder to confirm).**
+  Review finding: monitoring follow-ups (source `monitor`) are never quoted, so a monitor created without the customer
+  agreeing to $49 / site / month was a second free-answer path. Now `create_monitor` (comms-customer) needs an accepted
+  quote on the request (a free sample has none, so there a prospect's yes to the price is the acceptance) **and** the
+  customer's words accepting the monthly price as `evidence` (logged as a decision, event `monitor.accepted`);
+  the follow-ups it starts are that subscription, so they are not quoted again. The only free monitor is the system's
+  own on a verified free sample (marketing cost, like the sample). If founders prefer monitoring as a quote option the
+  customer accepts by link, that is a follow-up change.
 
 - **2026-11-08 02:10 UTC — Outside outreach agent contained (Laurence: keep it, never send more, record every response).**
   An agent `terragent-outreach` (agt_zx12…, Sonnet 5), set up outside this repo with the admin key, sent **62 cold emails to

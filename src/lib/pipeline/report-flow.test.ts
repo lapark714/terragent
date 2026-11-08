@@ -6,6 +6,7 @@ import { replyInThread, sendEmail } from "../email/send";
 import { logDecision } from "../events";
 import { startAgentSession } from "../naive/sessions";
 import { setSetting, SETTING } from "../settings";
+import { acceptQuote } from "./acceptance";
 import { saveAcquisitionPlan } from "./acquisition";
 import { getAnalysisJob, saveAnalysis } from "./analyses";
 import { deliverReport } from "./deliver";
@@ -48,7 +49,8 @@ async function analysedRequest(over: { threadId?: string; email?: string } = {})
     await logDecision({ requestId: req.id, kind, choice: "free", reasoning: "Sentinel-2 is enough", agent: "acquisition" });
   }
   await saveAcquisitionPlan(samplePlan(req.id), "acquisition");
-  await createQuote({ requestId: req.id }, "pricing"); // auto-approved under the cap
+  await createQuote({ requestId: req.id }, "pricing");
+  await acceptQuote({ requestId: req.id, actor: "comms-customer", evidence: "Yes, go ahead" }); // pricing v2: work starts only on an accepted option
   await saveAnalysis({ requestId: req.id, result: sampleAnalysis(), fileIds: SAMPLE_FILE_IDS }, "analytics");
   return req;
 }
@@ -187,8 +189,9 @@ describe("report, verdict and delivery", () => {
 describe("monitoring", () => {
   it("a repeated create_monitor updates the request's active monitor instead of adding a second", async () => {
     const req = await analysedRequest();
-    const first = await createMonitor({ requestId: req.id, metric: "dnbr_mean" }, "comms-customer");
-    const again = await createMonitor({ requestId: req.id, metric: "dnbr_mean", cadence: "0 9 * * *" }, "comms-customer");
+    const evidence = "Yes, monitor it monthly";
+    const first = await createMonitor({ requestId: req.id, metric: "dnbr_mean", evidence }, "comms-customer");
+    const again = await createMonitor({ requestId: req.id, metric: "dnbr_mean", cadence: "0 9 * * *", evidence }, "comms-customer");
     expect(again).toMatchObject({ monitor_id: first.monitor_id, cadence: "0 9 * * *", updated: true });
     const rows = await (await getDb()).query<{ cadence: string }>("SELECT cadence FROM monitors WHERE request_id = $1", [req.id]);
     expect(rows).toEqual([{ cadence: "0 9 * * *" }]);

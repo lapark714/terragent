@@ -281,7 +281,43 @@ async function continueRequest(m: InboundEmail, inbox: Inbox, route: Extract<Rou
   }
   const optOut = isOptOutReply(m.replyText);
   if (optOut) await addNote(route.requestId, SYSTEM, `Customer reply ${m.messageId} mentions opting out; left to comms-customer.`);
-  return toComms2(m, inbox, route.requestId, messageRowId, "customer_reply", optOut ? OPT_OUT_NOTE : "");
+  const quote = await quoteNote(route.requestId);
+  return toComms2(m, inbox, route.requestId, messageRowId, "customer_reply", [optOut ? OPT_OUT_NOTE : "", quote].filter(Boolean).join(" "));
+}
+
+/**
+ * Pricing v2: work starts only when the customer accepts a quote option, and a reply to the quote email is how most
+ * of them will. So when the request's quote is open, the brief says the reply may be an acceptance and how to record
+ * it. Built from our own quote row only (ids and dates): the reply's words stay in the thread, never in the brief.
+ * Reads the row as JSON so a database without the pricing v2 columns just gets no note.
+ */
+async function quoteNote(requestId: string): Promise<string> {
+  const db = await getDb();
+  const [row] = await db.query<{ q: Record<string, unknown> }>(
+    "SELECT to_jsonb(q) AS q FROM requests r JOIN quotes q ON q.id = r.quote_id WHERE r.id = $1", [requestId]);
+  const q = row?.q;
+  const ids = (Array.isArray(q?.options) ? q.options : [])
+    .map((o: { option_id?: unknown }) => o?.option_id)
+    .filter((id): id is string => typeof id === "string" && /^[ABC]$/.test(id));
+  if (!q || !ids.length) return "";
+  const quoteId = String(q.id);
+  const accepted = typeof q.accepted_option_id === "string" ? q.accepted_option_id : null;
+  if (accepted) {
+    return `Quote ${quoteId} was already accepted (option ${accepted}), so this reply is about work under way: answer it in the thread; don't call accept_quote again.`;
+  }
+  const validUntil = typeof q.valid_until === "string" ? Date.parse(q.valid_until) : NaN;
+  if (q.status === "expired" || validUntil < Date.now()) {
+    return `Quote ${quoteId} has expired. If the customer still wants the work, add_note with what they want and hand off to pricing (stage pricing) for a fresh quote.`;
+  }
+  if (!["approved", "sent"].includes(String(q.status))) return ""; // ACCEPTABLE_QUOTE_STATUSES (pipeline/quotes.ts)
+  const recommended = typeof q.recommended_option_id === "string" && ids.includes(q.recommended_option_id) ? q.recommended_option_id : ids[0];
+  return (
+    `This request has an open quote, ${quoteId} (option${ids.length > 1 ? "s" : ""} ${ids.join(", ")}; recommended ${recommended}), ` +
+    "so this reply may accept it. If the customer accepts, call accept_quote with the option they named " +
+    `(${recommended} if they just say yes or go ahead) and their words as evidence (no names or contact details). ` +
+    "If they decline or ask for changes, add_note with what they want and hand off to pricing (stage pricing). " +
+    "Nothing starts until an option is accepted."
+  );
 }
 
 /**

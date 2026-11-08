@@ -115,11 +115,19 @@ async function main() {
   await call("acquisition", "save_acquisition_plan", freePlan);
   await call("acquisition", "handoff", { request_id: id, to: "pricing", stage: "pricing", instructions: "Quote the free-data report" });
 
-  // 4 · Pricing.
+  // 4 · Pricing (v2): the server's options, saved as the quote; create_quote hands it to comms-customer itself.
   await call("pricing", "estimate_costs", { request_id: id });
-  const { quote } = await call<{ quote: { id: string; price_usd: number; auto_approved: boolean } }>("pricing", "create_quote", { request_id: id });
-  log(`quote ${quote.id}: $${quote.price_usd} (${quote.auto_approved ? "auto-approved" : "needs a founder"})`);
-  await call("pricing", "handoff", { request_id: id, to: "analytics", stage: "analysis", instructions: "Run the pipeline" });
+  const priced = await call<{ options: { option_id: string; label: string }[]; recommended_option_id: string }>("pricing", "price_options", { request_id: id });
+  log(`options ${priced.options.map((o) => `${o.option_id} (${o.label})`).join(", ")}; recommended ${priced.recommended_option_id}`);
+  const { quote } = await call<{ quote: { id: string; price_usd: number; recommended_option_id: string } }>("pricing", "create_quote", { request_id: id });
+  log(`quote ${quote.id}: recommended ${quote.recommended_option_id} at $${quote.price_usd}; waiting for the customer`);
+
+  // 4b · Comms 2 sends it (blocked: no inbox is armed), and the customer's plain "yes" accepts the recommended option.
+  // accept_quote starts the analysis itself; nothing beyond the investigation runs before it.
+  const sent = await call<{ status: string }>("comms-customer", "send_quote", { request_id: id });
+  log(`quote email: ${sent.status}`);
+  const accepted = await call<{ option_id: string; next: string }>("comms-customer", "accept_quote", { request_id: id, evidence: "Yes, go ahead" });
+  log(`customer accepted option ${accepted.option_id} → ${accepted.next}`);
 
   // 5 · Analytics: job → pipeline (locally) → publish (fake file ids) → save.
   const { job } = await call<{ job: Parameters<typeof runPipelineLocally>[0] }>("analytics", "get_analysis_job", { request_id: id });

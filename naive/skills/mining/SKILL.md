@@ -61,6 +61,14 @@ funded company; reach = a public investor-relations or operations contact.
 
 ## Price
 
-- Quote = data + analysis cost + margin (pricing agent). Site change or indicator check from free data: from $49 per site.
+- Only the investigation (planning and comparing sources) is free; its output is the quote. Every answer is paid.
+- The quote offers 1-3 options, priced per job by the server (terragent.price_options: data + analysis + risk buffer + margin);
+  the pricing agent writes labels and notes, never prices. The cheapest option is never below $29.
+- Nothing runs until the customer accepts one option (a reply naming A/B/C, a plain "yes" for the recommended one, or the
+  accept link). Paid data is bought by a founder only after that acceptance; reports carry only derived results from it.
+- Recommend the cheapest option that answers the question; when free data can't (resolution, clouds, no recent scene),
+  recommend the paid option and say why.
+- Typical options: A = indicator or change check of one site from free 10-20 m data (from $29); B = sub-metre archive for pit,
+  dump or pond detail; C = new capture when the latest clear scene is too old. High-resolution or hyperspectral data is
+  passed through at cost + margin, often a range until the supplier confirms.
 - Monitoring (expansion, tailings ponds; monthly): $49 per site per month.
-- High-resolution or hyperspectral data: pass-through cost + margin, quoted and held for founder approval.

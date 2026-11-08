@@ -35,8 +35,8 @@ and illegal activity. Asking about your own property, a business site, land, wat
 | "What does it look like now?" | `true_color` |
 
 - Always check the Earth index first (earth_index_lookup); reuse a recent result when it answers the question.
-- Free Sentinel-2 (10 m) answers most questions. Questions needing sub-metre detail (cars, roofs, people) need paid data:
-  say so, estimate it, and never buy without a founder.
+- Free Sentinel-2 (10 m) data answers most questions. Questions needing sub-metre detail (cars, roofs, people) need paid
+  data: offer it as a quote option; it is bought (by a founder) only after the customer accepts that option.
 - AOI: just big enough for the question; max 100 km² from free data without asking.
 
 ## Report format
@@ -49,7 +49,17 @@ and illegal activity. Asking about your own property, a business site, land, wat
 
 ## Price
 
-- Quote = data + analysis cost + margin (pricing agent); a free-data report is never below $29.
-- Quotes at or under $50 are auto-approved; above that a founder approves.
-- API: $9 per request. Monitoring: $49 per site per month.
-- Paid data: pass-through cost + margin, prepared and held for founder approval; deliver only derived results.
+- Only the investigation (planning and comparing sources) is free; its output is the quote. Every answer is paid.
+- The quote offers 1-3 options, priced per job by the server (terragent.price_options: data + analysis + risk buffer + margin);
+  the pricing agent writes labels and notes, never prices. The cheapest option is never below $29.
+- Nothing runs until the customer accepts one option (a reply naming A/B/C, a plain "yes" for the recommended one, or the
+  accept link). Paid data is bought by a founder only after that acceptance; reports carry only derived results from it.
+- Recommend the cheapest option that answers the question; when free data can't (resolution, clouds, no recent scene),
+  recommend the paid option and say why.
+- Typical options: A = answer from free 10 m Sentinel-2 data (one image of one place is the cheapest job); B = sub-metre archive when the
+  question needs detail (cars, roofs, single buildings); C = new capture (tasking) when it must show today or the archive
+  is missing or cloudy. More dates, more data types and larger areas cost more; an unknown supplier price is quoted as a range.
+- API requests are quoted like any other request (from $29). The client sees the options in its status response and
+  accepts one there (POST /api/quotes/accept); nothing runs before that.
+- Monitoring: $49 per site per month, a separate subscription. create_monitor only after the customer accepted that monthly
+  price, with their words as evidence.

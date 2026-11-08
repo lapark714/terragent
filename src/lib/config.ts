@@ -48,20 +48,80 @@ export const AGENT_BUDGETS: Record<AgentName, AgentBudget> = {
 };
 
 // ---------------------------------------------------------------------------
-// Pricing (spec §6): quote = data cost + analysis cost + margin.
+// Pricing v2 (spec §6, NOTES 2026-11-08). Per job, bottom-up, 1–3 options (src/lib/pipeline/pricing-engine.ts):
+//   option price = data + analysis + risk buffer + margin, floored and rounded to a friendly number.
+// No free answers: only the investigation (planning + source comparison) is free, and nothing else runs until the
+// customer accepts an option. Quotes go out without founder review; buying paid data stays a founder's job.
 // ---------------------------------------------------------------------------
 export const PRICING = {
-  /** Quotes at or below this are auto-approved (no human, no waiting on the customer). */
+  /**
+   * DISPLAY / BACK-COMPAT ONLY (landing and terms copy). Since pricing v2 nothing starts work from it: every quote
+   * waits for the customer to accept an option, whatever its price.
+   */
   autoApproveCapUsd: envNumber("PRICE_AUTO_APPROVE_CAP_USD", 50),
-  /** Floor price for a free-data report. */
+  /** Price floor of any option (in practice the cheapest one, usually free data). Never $0. */
   minReportUsd: envNumber("PRICE_MIN_REPORT_USD", 29),
-  /** Margin as a multiple of real cost (data + compute), with a dollar floor. */
-  marginMultiple: 3,
-  marginFloorUsd: 20,
-  /** Estimated agent + compute cost for one free-data report, until measured. */
+  /**
+   * Margin = max(analysisMarginMultiple × analysis + dataMarkup × (data + risk), marginFloorUsd).
+   * Value margin on our own analysis; a reseller markup on purchased imagery (industry norm ~20–40%).
+   */
+  analysisMarginMultiple: envNumber("PRICE_ANALYSIS_MARGIN_MULTIPLE", 8),
+  dataMarkup: envNumber("PRICE_DATA_MARKUP", 0.35),
+  /** @deprecated kept for the quote mirror columns / older callers; the engine uses the two values above. */
+  marginMultiple: envNumber("PRICE_MARGIN_MULTIPLE", 3),
+  marginFloorUsd: envNumber("PRICE_MARGIN_FLOOR_USD", 20),
+  /** Estimated agent + compute cost for one free-data report (estimate_costs, outbound metrics). Same as analysisBaseUsd. */
   defaultAnalysisCostUsd: 1.5,
+
+  // --- analysis cost (agents + compute), per option ---------------------------------------------------------
+  /** Measured agent cost of one report: planner + analytics + interpreter + verifier + comms sessions (~$1.5). */
+  analysisBaseUsd: envNumber("PRICE_ANALYSIS_BASE_USD", 1.5),
+  /** Dates/scenes included in the base (a before/after pair). */
+  analysisIncludedEpochs: 2,
+  /**
+   * Most dates a quote may price for one request. The pipeline (pipeline/terragent_pipeline) compares one before/after
+   * pair, so a quote never sells more dates than are analysed; price_options / create_quote cap `epochs` here and say so.
+   * Raise it when the pipeline does time series (the engine already prices extra dates).
+   */
+  maxAnalysisEpochs: 2,
+  /** Each extra date beyond the included two: one more pipeline run plus interpreter tokens. */
+  analysisPerExtraEpochUsd: 0.25,
+  /** Each data type beyond the first (e.g. optical + radar): another recipe and a longer report. */
+  analysisPerExtraDataTypeUsd: 1.0,
+  /** Area included in the base; beyond it, compute scales with km². */
+  analysisIncludedKm2: 25,
+  analysisComputePerKm2Usd: 0.02,
+  /** High-stakes uses (insurance, legal, safety): one more verifier pass. */
+  analysisHighStakesUsd: 1.0,
+  /** Cap on the analysis line, so a huge area doesn't price compute absurdly (data costs are not capped). */
+  analysisCapUsd: 250,
+
+  // --- risk buffer: % of data cost by uncertainty (summed per data item) --------------------------------------
+  /** New capture: weather, re-tasking, minimum-order surprises. */
+  riskTaskingPct: 0.25,
+  /** No public price: applied to the high end of the estimated range. */
+  riskUnknownPricePct: 0.15,
+  /** Optical data where clouds are likely (tropics, or the plan found the free scenes cloudy). */
+  riskCloudyOpticalPct: 0.1,
+
+  // --- data prices the registry doesn't give -----------------------------------------------------------------
+  /** USD/km² band for a provider with no public price when the registry has no priced provider of that type/mode. */
+  unknownPriceBandUsdPerKm2: [5, 40] as [number, number],
+  /** Assumed minimum order (km²) at the high end of an unknown price. */
+  unknownMinOrderKm2: 25,
+  /** Tasking minimum when the provider's notes don't state one (most tasking minimums are 25–100 km²). */
+  taskingMinOrderKm2: 25,
+  /** EUR → USD for UP42 rows (prices in EUR). Approximate; the founder sees the real figure at purchase. */
+  eurToUsd: envNumber("PRICE_EUR_TO_USD", 1.1),
+
+  // --- quote lifecycle ---------------------------------------------------------------------------------------
+  /** How long a quote's options can be accepted. */
+  quoteValidDays: 7,
+  /** create_quote rejects an agent's option price that differs from the server's by more than this. */
+  repriceTolerancePct: 0.05,
+
+  /** Monitoring subscription; create_monitor records the customer's acceptance of this price first (NOTES 2026-11-08). */
   monitoringPerSiteMonthlyUsd: 49,
-  apiPerRequestUsd: 9,
 };
 
 // ---------------------------------------------------------------------------

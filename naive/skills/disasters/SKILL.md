@@ -72,7 +72,15 @@ Be helpful, never fear-based. Only write when the imagery actually shows somethi
 
 ## Price
 
-- Quote = data + analysis cost + margin (pricing agent). Single-property free-data check: from $29.
-- Portfolio check (10+ properties in one event area): price per property, from $19.
+- Only the investigation (planning and comparing sources) is free; its output is the quote. Every answer is paid.
+- The quote offers 1-3 options, priced per job by the server (terragent.price_options: data + analysis + risk buffer + margin);
+  the pricing agent writes labels and notes, never prices. The cheapest option is never below $29.
+- Nothing runs until the customer accepts one option (a reply naming A/B/C, a plain "yes" for the recommended one, or the
+  accept link). Paid data is bought by a founder only after that acceptance; reports carry only derived results from it.
+- Recommend the cheapest option that answers the question; when free data can't (resolution, clouds, no recent scene),
+  recommend the paid option and say why.
+- Typical options: A = before/after check of one property from free Sentinel-2 data (from $29); B = 30-50 cm archive for
+  roof-level damage (pass-through data cost + analysis + margin); C = new capture after the event when the archive has no
+  clear post-event scene (tasking: fastest answer, highest price, often a range until the supplier confirms).
+- Portfolio check (10+ properties in one event area): priced per job, so the per-property price falls with volume.
 - Monitoring through recovery (re-check as new images arrive): $49 per site per month.
-- High-resolution damage imagery: pass-through cost + margin, quoted and held for founder approval.

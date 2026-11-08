@@ -42,7 +42,9 @@ export function register(r: ToolRegistrar): void {
       stage: z.enum(STAGES).describe("next stage; sets the board status (e.g. planning, acquisition, analysis, verification, delivery)"),
       instructions: z.string().min(5).max(4000).describe("what the next agent should do; never paste customer text here"),
       status: RequestStatus.optional().describe("override the status the stage implies (never a finishing status)"),
-      quote_accepted: z.boolean().optional().describe("comms-customer only: the customer accepted the sent quote in the thread"),
+      quote_accepted: z.boolean().optional().describe(
+        "deprecated (comms-customer only): accepts nothing by itself; record the customer's choice with accept_quote, which starts the work",
+      ),
     },
     async (a, ctx) => {
       const lane = await handoff({

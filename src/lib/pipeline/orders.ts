@@ -1,19 +1,23 @@
 /**
  * Paid data orders and supplier quote requests. Orders are prepared in full and held; even after a founder
  * approves in Naïve, nothing is bought here — a founder places the order by hand (spec §5.2, ARCHITECTURE §5).
+ * Pricing v2: an order exists only for an option the customer ACCEPTED (paidDataBlockedReason), and the analysis of
+ * an accepted paid option starts when a founder marks its data delivered (markOrderDelivered).
  */
 import { createHash } from "node:crypto";
 import { replyInThread, sendEmail } from "../email/send";
 import { renderSupplierQuoteRequest } from "../email/templates";
 import { getThread } from "../email/threads";
-import type { DataSpec } from "../domain";
+import type { DataSpec, QuoteOption } from "../domain";
 import { logDecision, logEvent, logIntervention } from "../events";
 import { polygonBbox } from "../geo/h3";
 import { newId } from "../ids";
 import { upsertCard } from "../naive/board";
 import { errorMessage, json, num, query, queryOne, round2 } from "./db";
+import { needsQuote } from "./gates";
 import { getProvider, isEmail, providerView, type ProviderRow } from "./providers";
-import { isTerminal, requireRequest, setStatus, type RequestRow } from "./requests";
+import { scrubText } from "../mcp/scrub";
+import { handoff, isTerminal, requireRequest, setStatus, type RequestRow } from "./requests";
 
 export const NAIVE_APPROVER = "founder (Naïve approval)";
 const MIN_JUSTIFICATION = 40;
@@ -56,6 +60,31 @@ export function orderView(o: OrderRow) {
   };
 }
 
+/**
+ * Why paid data can't be ordered for this request and provider yet (null when it can). Pricing v2 and CLAUDE.md "gates
+ * in code": a request that needs a quote gets paid data only once the customer ACCEPTED an option that buys from this
+ * provider. accept_quote prepares those orders itself after its atomic claim, so it passes; nothing earlier can hold,
+ * approve or (on the dashboard) decide an order. A pre-v2 quote accepted as its single option has no data items to check.
+ */
+export async function paidDataBlockedReason(
+  req: Pick<RequestRow, "id" | "source" | "is_free_sample" | "quote_id">, providerId: string,
+): Promise<string | null> {
+  if (!needsQuote(req)) return null;
+  const quote = req.quote_id
+    ? await queryOne<{ id: string; status: string; accepted_option_id: string | null; options: QuoteOption[] | null }>(
+        "SELECT id, status, accepted_option_id, options FROM quotes WHERE id = $1", [req.quote_id])
+    : null;
+  const rule = "Paid data is ordered only after the customer accepts a quote option that needs it (accept_quote prepares those orders itself)";
+  if (!quote || quote.status !== "accepted") return `${rule}; request ${req.id} has no accepted quote yet.`;
+  const options = Array.isArray(quote.options) ? quote.options : [];
+  if (!options.length) return null;
+  const accepted = options.find((o) => o.option_id === quote.accepted_option_id);
+  if (!accepted?.data.some((d) => d.provider_id === providerId)) {
+    return `${rule}; the accepted option ${quote.accepted_option_id ?? "?"} of quote ${quote.id} buys nothing from ${providerId}.`;
+  }
+  return null;
+}
+
 export async function prepareOrder(
   a: { requestId: string; providerId: string; product: string; areaKm2: number; estCostUsd: number; justification: string;
     deliveryTime?: string | null; licenseTerms?: string | null; orderId?: string },
@@ -65,6 +94,8 @@ export async function prepareOrder(
   if (isTerminal(req)) throw new Error(`Request ${req.id} is ${req.status}.`);
   if (req.is_free_sample) throw new Error("Free samples never get paid orders.");
   const provider = await requirePaidProvider(a.providerId);
+  const blocked = await paidDataBlockedReason(req, provider.id);
+  if (blocked) throw new Error(blocked);
   if (a.justification.trim().length < MIN_JUSTIFICATION) throw new Error("Explain in writing why free data is not enough (justification).");
   const meta = { delivery_time: a.deliveryTime ?? provider.delivery_time, license_terms: a.licenseTerms ?? provider.license_terms, currency: provider.currency };
 
@@ -106,6 +137,8 @@ export async function approveOrder(a: { orderId: string; reason?: string }, acto
     "Add a note to the request; do not attempt the purchase.";
   if (order.status === "approved") return { order_id: order.id, status: "approved", purchased: false, instruction };
   if (order.status !== "awaiting_approval") throw new Error(`Order ${order.id} is ${order.status}; prepare_paid_order first.`);
+  const blocked = await paidDataBlockedReason(await requireRequest(order.request_id), order.provider_id);
+  if (blocked) throw new Error(blocked);
 
   await query("UPDATE orders SET status='approved', approved_by=$2, decided_at=now(), updated_at=now() WHERE id=$1", [order.id, NAIVE_APPROVER]);
   const counted = await claimDashboardAllow(order.request_id);
@@ -138,6 +171,64 @@ async function claimDashboardAllow(requestId: string): Promise<string | null> {
     [requestId],
   );
   return row?.id ?? null;
+}
+
+/** Paid orders an accepted option is still waiting for (supplier quote requests from the investigation don't count). */
+const WAITING_ORDER_STATUSES = ["awaiting_approval", "approved", "placed"];
+
+/**
+ * A founder bought the data by hand and it arrived (dashboard action "order" with decision "delivered"; the dashboard
+ * logs the one intervention). Marks the order delivered, keeping where the purchased files are (Naïve file ids and a
+ * short note, no personal data) on the order for the interpreter. Once no other paid order of the request is still
+ * waiting, it hands the request to analytics: an accepted paid option's analysis starts only now, never on free data
+ * while the purchase was pending.
+ */
+export async function markOrderDelivered(a: { orderId: string; founder: string; fileIds?: string[]; note?: string | null }) {
+  const order = await requireOrder(a.orderId);
+  const actor = `human:${a.founder}`;
+  const base = { order_id: order.id, request_id: order.request_id };
+  if (order.status === "delivered") return { ...base, status: "delivered", already: true, analysis_started: false, waiting_for: [] as string[] };
+  if (!WAITING_ORDER_STATUSES.includes(order.status)) throw new Error(`Order ${order.id} is ${order.status}; only a held or approved order can be marked delivered.`);
+  const req = await requireRequest(order.request_id);
+  const blocked = await paidDataBlockedReason(req, order.provider_id);
+  if (blocked) throw new Error(blocked);
+
+  const delivered = {
+    at: new Date().toISOString(), by: a.founder, file_ids: (a.fileIds ?? []).filter((f) => /^fil_[\w-]+$/.test(f)).slice(0, 20),
+    note: scrubText((a.note ?? "").trim(), []).slice(0, 500) || null,
+  };
+  const updated = await queryOne<{ id: string }>(
+    `UPDATE orders SET status = 'delivered', approved_by = COALESCE(approved_by, $2), decided_at = COALESCE(decided_at, now()),
+       meta = meta || $3::jsonb, updated_at = now()
+     WHERE id = $1 AND status = ANY($4::text[]) RETURNING id`,
+    [order.id, a.founder, json({ delivered }), WAITING_ORDER_STATUSES],
+  );
+  if (!updated) throw new Error(`Order ${order.id} changed while it was being marked delivered; read it again.`);
+  await logEvent("order.delivered", actor, { order_id: order.id, provider_id: order.provider_id, files: delivered.file_ids.length, purchased: true }, req.id);
+  await logDecision({
+    requestId: req.id, kind: "free_vs_paid", agent: actor, choice: `paid data for order ${order.id} delivered (${order.provider_id}); bought by a founder`,
+    reasoning: order.justification,
+  });
+
+  const waiting = await query<{ id: string }>(
+    "SELECT id FROM orders WHERE request_id = $1 AND id <> $2 AND status = ANY($3::text[]) ORDER BY created_at",
+    [req.id, order.id, WAITING_ORDER_STATUSES],
+  );
+  if (waiting.length || isTerminal(req)) return { ...base, status: "delivered", already: false, analysis_started: false, waiting_for: waiting.map((w) => w.id) };
+  const done = await query<{ id: string }>("SELECT id FROM orders WHERE request_id = $1 AND status = 'delivered' ORDER BY created_at", [req.id]);
+  try {
+    await handoff({
+      requestId: req.id, from: actor, to: "analytics", stage: "analysis",
+      instructions:
+        `The paid data for the customer's accepted option arrived (order${done.length > 1 ? "s" : ""} ${done.map((d) => d.id).join(", ")}, bought by a founder). ` +
+        "Run the analysis: get_analysis_job, then the pipeline. The purchased imagery is listed on those orders (meta.delivered) for the interpreter; " +
+        "it is licensed, so reports carry derived results only",
+    });
+  } catch (e) {
+    // The delivery is recorded; the coordinator sees the request as stuck and hands it on.
+    return { ...base, status: "delivered", already: false, analysis_started: false, waiting_for: [] as string[], warning: `Handoff to analytics failed: ${errorMessage(e)}` };
+  }
+  return { ...base, status: "delivered", already: false, analysis_started: true, waiting_for: [] as string[] };
 }
 
 export async function getOrderView(id: string) {

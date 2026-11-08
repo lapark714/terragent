@@ -3,7 +3,8 @@ import type { Db } from "../db/client";
 import { seedTemplates, TEMPLATE_SEEDS } from "./template-library";
 import {
   AI_DISCLOSURE, ensureCompliance, fillTemplate, HUMAN_REVIEW_NOTE, MONITORING_OFFER, renderClarifyingQuestion, renderFollowup, renderOutreach,
-  renderCustomerUpdate, renderQuote, renderRefusal, renderReportDelivery, renderSupplierQuoteRequest, TemplateError, type ReportForEmail,
+  optionPriceText, quoteAcceptUrl, renderCustomerUpdate, renderQuote, renderRefusal, renderReportDelivery, renderSupplierQuoteRequest,
+  TemplateError, type QuoteOptionForEmail, type ReportForEmail,
 } from "./templates";
 import { memoryDb } from "./testing";
 
@@ -147,6 +148,90 @@ describe("customer and supplier emails", () => {
     expect(e.text).toContain("Hi there,");
     expect(e.text).toContain("waiting for the next clear one");
     expect(e.text).not.toMatch(/earlier report|keep watching/);
+  });
+});
+
+describe("quote with options (pricing v2)", () => {
+  const free: QuoteOptionForEmail = {
+    option_id: "A", label: "Free-data check", answers: "Whether floodwater reached the building.", kind: "free_data",
+    data: [{ data_type: "optical", resolution_m: 10, epochs: 2, needs_supplier_quote: false }],
+    price_usd: 29, price_range_usd: null, delivery_time: "within 2 hours",
+  };
+  const archive: QuoteOptionForEmail = {
+    option_id: "B", label: "Sharp archive image", answers: "Whether individual roof sections are damaged", kind: "archive",
+    data: [{ data_type: "optical", resolution_m: 0.5, epochs: 1, needs_supplier_quote: true }],
+    price_usd: null, price_range_usd: [180, 260], delivery_time: "1–2 days",
+  };
+  const tasking: QuoteOptionForEmail = {
+    option_id: "C", label: "New capture", answers: "What the roof looks like this week", kind: "tasking",
+    data: [{ data_type: "optical", resolution_m: 0.3, epochs: 1 }], price_usd: 650, price_range_usd: null, delivery_time: "3–7 days",
+  };
+  const quote = { options: [free, archive, tasking], recommended_option_id: "B", valid_until: "2026-11-14T21:00:00Z", accept_token: "TokTokTokTokTokTok1234" };
+  const render = (q: Parameters<typeof renderQuote>[0]["quote"] = quote, extra: Partial<Parameters<typeof renderQuote>[0]> = {}) =>
+    renderQuote({ customerName: "Pat", question: "Did the storm damage our roof?", requestId: "req_q1", quote: q, ...extra });
+
+  afterEach(() => vi.unstubAllEnvs());
+
+  it("lists every option with what it answers, detail, delivery and price or range, the recommended one marked", () => {
+    const e = render();
+    expect(e.subject).toBe("Your Terragent quote (req_q1)");
+    expect(e.text).toContain(
+      "- Option A: Free-data check. Answers: Whether floodwater reached the building. Free public satellite data, 10 m detail, 2 dates. " +
+        "Delivery: within 2 hours. Price: $29.",
+    );
+    expect(e.text).toContain("- Option B (recommended): Sharp archive image. Answers: Whether individual roof sections are damaged.");
+    expect(e.text).toContain("Archive imagery we buy for you, 0.5 m detail, 1 date. Delivery: 1–2 days. Price: $180 to $260 (estimate");
+    expect(e.text).toContain("- Option C: New capture.");
+    expect(e.text).toContain("0.3 m detail");
+    expect(e.text).toContain("Price: $650.");
+    expect(e.text.match(/\(recommended\)/g)).toHaveLength(1);
+    expect(e.html).toMatch(/<ul[^>]*><li>Option A: Free-data check\./);
+  });
+
+  it("says how to accept (reply yes / a letter, or the link), that paid data is bought only after acceptance, and validity", () => {
+    vi.stubEnv("PUBLIC_BASE_URL", "https://terragent.test");
+    const e = render();
+    expect(e.text).toContain('reply "yes" for option B, or reply with the letter of the option you want (A, B or C).');
+    expect(e.text).toContain("You can also choose online: https://terragent.test/quote/TokTokTokTokTokTok1234");
+    expect(e.html).toContain('<a href="https://terragent.test/quote/TokTokTokTokTokTok1234"');
+    expect(e.text).toContain("That check is free. Nothing else happens, and nothing is bought or charged, until you choose an option.");
+    expect(e.text).toContain("We buy paid imagery only after you accept an option that needs it.");
+    expect(e.text).toContain("This quote is valid until 14 Nov 2026. Reference: req_q1");
+    expect(e.text).toContain(AI_DISCLOSURE);
+    expect(e.text).not.toMatch(/margin|analysis_cost|risk|unit_price|Opt out/i);
+  });
+
+  it("prefers an explicit accept link, defaults the recommendation to the first option, and drops paid-data wording for free-only quotes", () => {
+    const e = render({ options: [free, { ...free, option_id: "B", label: "Free check, 6 dates", data: [{ data_type: "optical", resolution_m: 10, epochs: 6 }], price_usd: 39 }] },
+      { acceptUrl: "https://x.test/quote/abc" });
+    expect(e.text).toContain("- Option A (recommended): Free-data check.");
+    expect(e.text).toContain('reply "yes" for option A, or reply with the letter of the option you want (A or B).');
+    expect(e.text).toContain("You can also choose online: https://x.test/quote/abc");
+    expect(e.text).toContain("6 dates");
+    expect(e.text).not.toContain("paid imagery");
+    expect(e.text).not.toContain("valid until");
+  });
+
+  it("a single option needs no letter and no recommended mark; no token means no link", () => {
+    const e = render({ options: [free] });
+    expect(e.text).toContain('To go ahead, reply "yes" to this email.');
+    expect(e.text).toContain("priced the work below");
+    expect(e.text).not.toContain("(recommended)");
+    expect(e.text).not.toContain("choose online");
+  });
+
+  it("formats prices and builds the accept URL from the public base", () => {
+    vi.stubEnv("PUBLIC_BASE_URL", "https://terragent.test/");
+    expect(quoteAcceptUrl("abcDEF1234567890")).toBe("https://terragent.test/quote/abcDEF1234567890");
+    expect(optionPriceText({ price_usd: 1250, price_range_usd: null })).toBe("$1250");
+    expect(optionPriceText({ price_usd: null, price_range_usd: [900, 1400] })).toMatch(/^\$900 to \$1400 \(estimate/);
+    expect(optionPriceText({ price_usd: null, price_range_usd: null })).toBe("on request");
+  });
+
+  it("a quote without options keeps the single-price email", () => {
+    const e = renderQuote({ question: "Did it flood?", requestId: "req_1", quote: { price_usd: 49, line_items: [{ label: "Analysis", amount_usd: 49 }], options: [] } });
+    expect(e.text).toContain("Total: $49");
+    expect(e.text).not.toContain("Option A");
   });
 });
 

@@ -2,11 +2,13 @@
 import { PRICING } from "../config";
 import type { DataSpec, Recipe } from "../domain";
 import { env } from "../env";
-import { logDecision } from "../events";
+import { logDecision, logEvent } from "../events";
 import { newId } from "../ids";
+import { scrubText } from "../mcp/scrub";
 import { json, query, queryOne } from "./db";
 import { latestAnalysis } from "./analyses";
 import { CHANGE_THRESHOLDS, isChangeMetric } from "./earth-index";
+import { assertPriceCleared } from "./gates";
 import { requireRequest } from "./requests";
 
 /**
@@ -22,10 +24,30 @@ export function defaultMonitorCadence(): string {
   return v && CRON.test(v) ? v : DEFAULT_MONITOR_CADENCE;
 }
 
-export async function createMonitor(a: { requestId: string; metric: string; threshold?: number | null; cadence?: string; recipe?: Recipe }, actor: string) {
+/**
+ * Monitoring is a paid subscription (PRICING.monitoringPerSiteMonthlyUsd), not a free answer (pricing v2): an agent
+ * creates a monitor only for a request whose quote option was accepted, and only with the customer's own words
+ * accepting the monthly price (`evidence`), which is logged as the decision. The follow-ups it starts (source
+ * 'monitor') are that subscription, so gates.ts doesn't quote them again. The one exception is the system's own monitor
+ * on a verified free sample (verdicts.ts): our marketing cost, like the sample, whose follow-ups go to the prospect.
+ */
+export async function createMonitor(
+  a: { requestId: string; metric: string; threshold?: number | null; cadence?: string; recipe?: Recipe; evidence?: string | null }, actor: string,
+) {
   const req = await requireRequest(a.requestId);
   const spec = req.data_spec as DataSpec | null;
   if (!spec || req.lat === null || req.lon === null) throw new Error("The request needs a saved data spec with a location before it can be monitored.");
+  const marketing = actor === "system" && req.is_free_sample;
+  const evidence = scrubText((a.evidence ?? "").trim(), [req.customer_name]).replace(/\s+/g, " ").slice(0, 300);
+  if (!marketing) {
+    await assertPriceCleared(req);
+    if (evidence.length < 2) {
+      throw new Error(
+        `Monitoring is paid ($${PRICING.monitoringPerSiteMonthlyUsd} per site per month): create_monitor only once the customer accepted that ` +
+          "price, with their words as evidence. If they haven't seen the price, send_customer_message kind update with it and wait for their yes.",
+      );
+    }
+  }
   const cadence = a.cadence ?? defaultMonitorCadence();
   if (!CRON.test(cadence.trim())) throw new Error(`cadence must be a 5-field cron expression, got "${cadence}".`);
   const recipe = a.recipe ?? spec.recipe;
@@ -56,7 +78,11 @@ export async function createMonitor(a: { requestId: string; metric: string; thre
   await query("UPDATE requests SET monitor_id = $2, updated_at = now() WHERE id = $1", [req.id, id]);
   await logDecision({
     requestId: req.id, kind: "monitoring", agent: actor, choice: `monitor ${id}: ${recipe}/${a.metric} on "${cadence.trim()}"`,
-    reasoning: `Re-check and follow up when |change| ≥ ${threshold ?? "any"}; baseline ${lastValue ?? "none"} from ${lastScene ?? "no scene"}.`,
+    reasoning: `Re-check and follow up when |change| ≥ ${threshold ?? "any"}; baseline ${lastValue ?? "none"} from ${lastScene ?? "no scene"}. ` +
+      (marketing
+        ? "Free-sample monitor (our marketing cost): follow-ups bring the prospect new information."
+        : `Customer accepted monitoring at $${PRICING.monitoringPerSiteMonthlyUsd} per site per month: "${evidence}".`),
   });
+  if (!marketing) await logEvent("monitor.accepted", actor, { monitor_id: id, price_per_month_usd: PRICING.monitoringPerSiteMonthlyUsd }, req.id);
   return { monitor_id: id, recipe, metric: a.metric, threshold, cadence: cadence.trim(), price_per_month_usd: PRICING.monitoringPerSiteMonthlyUsd };
 }

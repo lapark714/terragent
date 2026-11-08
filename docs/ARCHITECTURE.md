@@ -45,15 +45,23 @@ and the Naïve board show the same truth.
 | 0 | — (portal / webhook / API) | | `startInboundRequest()` → request `received` | comms-customer |
 | 1 | **comms-customer** (Comms 2) | `get_request`, `get_thread` | `record_screening` (refusals logged as `screening` decisions); `send_customer_message` if unclear | planner (or stop) |
 | 2 | **planner** (Brain 1) | `geocode`, `earth_index_lookup`, `search_free_scenes` | `save_data_spec` | acquisition |
-| 3 | **acquisition** (Orchestrator) | `search_free_scenes`, `list_providers`, SkyWatch MCP pricing | `log_decision` (source_selection, free_vs_paid), `save_acquisition_plan`; if paid would help: `request_supplier_quote`, `prepare_paid_order` (held), `place_paid_order` (**ask**) | pricing |
-| 4 | **pricing** | `estimate_costs`, `list_providers` | `create_quote` (auto-approved ≤ cap) | analytics if auto-approved; above the cap the quote is **held for a founder** (dashboard), then comms-customer sends it |
+| 3 | **acquisition** (Orchestrator) | `search_free_scenes`, `list_providers`, SkyWatch MCP pricing | `log_decision` (source_selection, free_vs_paid), `save_acquisition_plan` with the comparison the quote's options need (free source, best paid archive, tasking where relevant); `request_supplier_quote` only when the one paid source that answers has no public price | pricing |
+| 4 | **pricing** | `price_options` (server prices 1–3 options bottom-up, [pricing-engine.ts](../src/lib/pipeline/pricing-engine.ts)), `list_providers` | `create_quote` (server re-prices each option and refuses edited data items or prices; 7-day validity, accept token; status `quoted`) | comms-customer (handed by `create_quote`; no founder review) |
+| 4b | **comms-customer** | `get_request`, `get_thread` | `send_quote` (options email + accept link); on the customer's reply `accept_quote` (option named, or the recommended one on a plain yes). The accept link (`/quote/<token>`, `POST /api/quotes/accept`) and API clients (`GET /api/answer/{id}` → `quote.accept`) use the same service ([acceptance.ts](../src/lib/pipeline/acceptance.ts)) | free-data option → analytics (or interpreter for an Earth-index answer); paid option → held order per paid item + coordinator card; a founder buys by hand and marks it delivered (dashboard) → analytics |
 | 5 | **analytics** | `get_analysis_job` | runs pipeline in its computer; `publish_file`; `save_analysis` (→ Earth index) | interpreter |
 | 6 | **interpreter** (Brain 2) | `get_analysis`, `earth_index_lookup`, `view_image` | `save_report_draft`, `check_report_rules` | verifier |
 | 7 | **verifier** | `get_report`, `get_analysis`, `check_report_rules`, `view_image` | `save_verdict` (fail → interpreter, max 2 revisions) | comms-customer |
-| 8 | **comms-customer** | `get_report` | `deliver_report` (same thread, images + link), optional `create_monitor` | done |
+| 8 | **comms-customer** | `get_report` | `deliver_report` (same thread, images + link); `create_monitor` only once the customer accepted the monthly price (their words as evidence) | done |
+
+Pricing v2 (NOTES 2026-11-08): steps 1–4 are the free investigation and their output is the quote. Steps 5–8 run only
+once the customer accepted an option: `handoff` to analytics, interpreter or verifier (or to a work stage),
+`get_analysis_job`, `save_report_draft`, `save_verdict`, `deliver_report` and `create_monitor` all call
+`assertPriceCleared` ([gates.ts](../src/lib/pipeline/gates.ts)), and paid orders can be prepared, approved or marked
+delivered only for a provider in the accepted option (`paidDataBlockedReason`, [orders.ts](../src/lib/pipeline/orders.ts)).
 
 Free samples (signal engine) enter at step 2 with `is_free_sample=true`, skip screening/quote, and step 8
-becomes **comms-outreach**.
+becomes **comms-outreach**. They are the one exception to "nothing runs before acceptance" (our marketing cost), along
+with the system's own monitor on a verified free sample.
 
 ## 4. Outbound flow (spec §3.3) and outreach channels
 
@@ -79,6 +87,9 @@ becomes **comms-outreach**.
 | First outbound email needs a founder | `settings.email.inbox_armed[inbox]` false → `sendEmail` blocks (except `TEAM_EMAILS`) |
 | Outreach template approved first | `templates.status='approved'` required for `kind='outreach'` |
 | Never buy data without a founder | `place_paid_order` is Naïve `ask`; even when allowed it only records approval — a founder buys by hand |
+| No free answers; nothing runs before the customer accepts an option (pricing v2) | `assertPriceCleared` (quote `status='accepted'`) in `handoff` to work agents/stages, the analysis job, report, verdict, delivery and `create_monitor`; no price clears itself (`PRICING.autoApproveCapUsd` is display-only) |
+| Paid data only for an accepted option | `paidDataBlockedReason` in `prepare_paid_order`, `place_paid_order`, the dashboard's order approve and mark-delivered |
+| Agents can't set prices | `create_quote` re-prices every option server-side and refuses data items that don't match the server's options (provider, archive/tasking/free, dates, area ≥ 95 %, kind) or prices more than 5 % off |
 | Opt-outs | `suppression` checked before every send; `/unsubscribe?t=<token>` + "stop" replies |
 | Misuse | `record_screening` refusals; refused requests can't advance (`handoff` rejects) |
 | No CAPTCHA solving | outreach agent browser config `solve_captchas:false`, `stealth:false` |

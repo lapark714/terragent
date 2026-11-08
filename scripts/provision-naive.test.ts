@@ -153,9 +153,9 @@ describe("agent configs", () => {
     // save_verdict logs the verification decision and hands off itself.
     expect(withUrl.verifier.system).not.toMatch(/log_decision kind verification/);
     expect(withUrl.verifier.system).toMatch(/handoff_error/);
-    // A quote above the cap is held for a founder; pricing never sends it to comms-customer.
-    expect(withUrl.pricing.system).toMatch(/held for a founder[\s\S]*add_note/);
-    expect(withUrl.pricing.system).not.toMatch(/handoff to comms-customer to send the quote/);
+    // PRICING v2: no quote waits for a founder; create_quote hands the options to comms-customer to send.
+    expect(withUrl.pricing.system).not.toMatch(/held for a founder/);
+    expect(withUrl.pricing.system).toMatch(/create_quote's `next`: it hands the quote to comms-customer \(stage quote\)/);
     // Analytics: per-run job files on the shared computer, and monitor mode for re-checks.
     expect(withUrl.analytics.system).toMatch(/job_path/);
     expect(withUrl.analytics.system).toMatch(/get_analysis_job\(\{ request_id, monitor_id \}\)/);

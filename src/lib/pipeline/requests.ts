@@ -119,12 +119,23 @@ const cardTitle = (req: RequestRow, agent: string, stage: string) =>
 const REPEAT_WINDOW_MINUTES = 5;
 
 /**
+ * Customer work (pricing v2): these agents and stages run only once the customer accepted a quote option (gates.ts).
+ * Everything before them (screening, planning, acquisition, pricing, the quote itself) is the free investigation.
+ */
+const WORK_AGENTS: ReadonlySet<string> = new Set(["analytics", "interpreter", "verifier"]);
+const WORK_STAGES: ReadonlySet<string> = new Set(["analysis", "report", "revision", "verification", "delivery"]);
+export const isCustomerWork = (to: string, stage: string) => WORK_AGENTS.has(to) || WORK_STAGES.has(stage);
+
+/**
  * Hand a request to the next agent: records events, starts the agent (inbound lane) or assigns a board card
- * (background lane). Refuses finished requests, terminal status overrides, customer requests leaving Comms 2
- * before screening allowed them, and analysis before the price is cleared (gates.ts).
+ * (background lane; `lane` overrides the request's own, e.g. a board card for the coordinator on an inbound request).
+ * Refuses finished requests, terminal status overrides, customer requests leaving Comms 2 before screening allowed
+ * them, and any customer work (analytics, interpreter, verifier; analysis to delivery) before the customer accepted
+ * a quote option (gates.ts).
  */
 export async function handoff(args: {
   requestId: string; from: string; to: AgentName; stage: string; instructions: string; status?: RequestStatus; quoteAccepted?: boolean;
+  lane?: "inbound" | "background";
 }): Promise<{ session_id?: string; card_id?: string; deduped?: true }> {
   const req = await requireRequest(args.requestId);
   if (isTerminal(req)) throw new Error(`Request ${req.id} is ${req.status}; it can't be handed off.`);
@@ -139,14 +150,14 @@ export async function handoff(args: {
     throw new Error(`Request ${req.id} has not passed screening; comms-customer must record_screening (allowed) first.`);
   }
   if (args.quoteAccepted) await markQuoteAccepted(req, args.from);
-  // Work starts only on a cleared price: the pipeline, or the report when the Earth index already answers it.
-  if (args.to === "analytics" || args.stage === "report") await assertPriceCleared(req);
+  // Work starts only on an accepted option: the pipeline, the report (also from the Earth index), its review and delivery.
+  if (isCustomerWork(args.to, args.stage)) await assertPriceCleared(req);
 
   const repeat = await recentSameHandoff(req.id, args);
   if (repeat) return { ...repeat, deduped: true };
 
   const brief = handoffBrief(req.id, args.stage, args.instructions);
-  const lane = req.priority;
+  const lane = args.lane ?? req.priority;
   const result: { session_id?: string; card_id?: string } = {};
   let card: CardRef | null = null;
 
