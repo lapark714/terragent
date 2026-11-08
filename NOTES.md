@@ -39,6 +39,15 @@ _This table is refreshed after platform research; see docs/platform/README.md fo
 
 ## Decisions
 
+- **2026-11-08 — Email stack change (Laurence): cold outbound moves to a Naïve agent's identity email; AgentMail = intake + replies.**
+  AgentMail's terms forbid cold outreach, so cold emails will be sent from a Naïve identity inbox owned by comms-outreach,
+  and AgentMail keeps what it allows: people who write to us first (hello@), supplier threads (data@) and replies. Being
+  designed now (docs/platform/naive-email.md, cold-email-compliance.md, email-stack-change.md). Known constraint: a native
+  Naïve inbox needs a **verified domain**, so this likely needs a domain purchase (founder approval, spec said no custom
+  domain). Plan: sends still go through our MCP gateway so the code gates (suppression, caps, approved template,
+  idempotency, opt-out + AI disclosure + postal address) keep applying; Reply-To hello@ so replies land in AgentMail intake.
+  Supersedes the "email_direct only if AgentMail approves" part of the outbound-channel decision; contact forms stay.
+
 - **2026-11-08 — Founder decisions delegated to the build agent (Laurence: "just make whatever decision you wish").**
   1. **Foreign "shop" team paused, not deleted.** The Naïve org held a starter-template company created 19:41 UTC on Nov 7
      (CEO, store-manager, merchandiser, marketer, analyst; ~$81/day in caps; the marketer's job publishes a product post).
