@@ -4,7 +4,6 @@ import { LogoLockup } from "./Logo";
 const NAV = [
   { href: "/#how", label: "How it works" },
   { href: "/#api", label: "API" },
-  { href: "/dashboard", label: "Mission control" },
 ];
 
 /** Site header with the founders' logo. `overlay` floats it over a full-bleed hero (the landing globe). */
@@ -16,7 +15,7 @@ export function SiteHeader({ overlay = false }: { overlay?: boolean }) {
       </Link>
       <nav aria-label="Main" className="flex items-center gap-5 text-sm text-fg-2">
         {NAV.map((n) => (
-          <Link key={n.href} href={n.href} className={`hover:text-fg ${n.href === "/dashboard" ? "" : "hidden sm:inline"}`}>
+          <Link key={n.href} href={n.href} className={`hover:text-fg ${n.href === "/#api" ? "hidden sm:inline" : ""}`}>
             {n.label}
           </Link>
         ))}

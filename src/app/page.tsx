@@ -1,4 +1,3 @@
-import Link from "next/link";
 import { Pipeline } from "@/components/site/Pipeline";
 import { SiteFooter } from "@/components/site/SiteFooter";
 import { SiteHeader } from "@/components/site/SiteHeader";
@@ -22,8 +21,7 @@ export default function Home() {
                 From a question to a verified answer
               </h2>
               <p className="max-w-sm text-fg-2">
-                A team of AI agents runs every step. Each choice is logged on{" "}
-                <Link href="/dashboard" className="text-fg underline decoration-line-strong underline-offset-4 hover:decoration-fg">mission control</Link>.
+                A team of AI agents runs every step, and a separate verifier agent checks the work before anything reaches you.
               </p>
             </div>
             <Pipeline />
