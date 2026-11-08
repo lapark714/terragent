@@ -1,0 +1,145 @@
+{
+ "type": "FeatureCollection",
+ "features": [
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -81.87611111143838,
+     27.221944443412784
+    ]
+   },
+   "properties": {
+    "gaugelid": "ARCF1",
+    "status": "moderate",
+    "location": "SR 70 Arcadia",
+    "waterbody": "Peace River",
+    "state": "FL",
+    "obstime": "2026-11-07 21:30:00",
+    "observed": "15.72",
+    "action": "9",
+    "flood": "11",
+    "moderate": "14",
+    "major": "16",
+    "units": "ft",
+    "url": "https://water.noaa.gov/gauges/arcf1",
+    "latitude": 27.221944,
+    "longitude": -81.876111,
+    "wfo": "tbw"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -81.52222222237742,
+     29.166666665530244
+    ]
+   },
+   "properties": {
+    "gaugelid": "ASTF1",
+    "status": "minor",
+    "location": "Astor",
+    "waterbody": "St. Johns River",
+    "state": "FL",
+    "obstime": "2026-11-07 21:30:00",
+    "observed": "2.97",
+    "action": "2",
+    "flood": "2.3",
+    "moderate": "3",
+    "major": "4",
+    "units": "ft",
+    "url": "https://water.noaa.gov/gauges/astf1",
+    "latitude": 29.166667,
+    "longitude": -81.522222,
+    "wfo": "mlb"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -92.27805555531938,
+     41.85916666557087
+    ]
+   },
+   "properties": {
+    "gaugelid": "BPLI4",
+    "status": "minor",
+    "location": "Belle Plaine",
+    "waterbody": "Iowa River",
+    "state": "IA",
+    "obstime": "2026-11-07 22:00:00",
+    "observed": "15.81",
+    "action": "13",
+    "flood": "15",
+    "moderate": "",
+    "major": "",
+    "units": "ft",
+    "url": "https://water.noaa.gov/gauges/bpli4",
+    "latitude": 41.859167,
+    "longitude": -92.278056,
+    "wfo": "dvn"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -80.87277777807174,
+     28.369444443616274
+    ]
+   },
+   "properties": {
+    "gaugelid": "COCF1",
+    "status": "moderate",
+    "location": "Cocoa",
+    "waterbody": "St. Johns River",
+    "state": "FL",
+    "obstime": "2026-11-07 21:15:00",
+    "observed": "16.9",
+    "action": "15.8",
+    "flood": "16",
+    "moderate": "16.5",
+    "major": "17",
+    "units": "ft",
+    "url": "https://water.noaa.gov/gauges/cocf1",
+    "latitude": 28.369443999999998,
+    "longitude": -80.872778,
+    "wfo": "mlb"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -98.90277777747224,
+     48.09944444306851
+    ]
+   },
+   "properties": {
+    "gaugelid": "DCBN8",
+    "status": "major",
+    "location": "Devils Lake",
+    "waterbody": "Devils Lake",
+    "state": "ND",
+    "obstime": "2026-11-07 21:00:00",
+    "observed": "49.92",
+    "action": "",
+    "flood": "0.1",
+    "moderate": "0.2",
+    "major": "0.3",
+    "units": "ft",
+    "url": "https://water.noaa.gov/gauges/dcbn8",
+    "latitude": 48.099444000000005,
+    "longitude": -98.902778,
+    "wfo": "fgf"
+   }
+  }
+ ]
+}

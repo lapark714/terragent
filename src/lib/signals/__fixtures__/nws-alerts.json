@@ -1,0 +1,455 @@
+{
+ "@context": [
+  "https://geojson.org/geojson-ld/geojson-context.jsonld",
+  {
+   "@version": "1.1",
+   "wx": "https://api.weather.gov/ontology#",
+   "@vocab": "https://api.weather.gov/ontology#"
+  }
+ ],
+ "type": "FeatureCollection",
+ "features": [
+  {
+   "id": "https://api.weather.gov/alerts/urn:oid:2.49.0.1.840.0.8dc22f89c725848e71ed04e6f2611dec01e8660c.001.1",
+   "type": "Feature",
+   "geometry": {
+    "type": "Polygon",
+    "coordinates": [
+     [
+      [
+       -111.65,
+       33.55
+      ],
+      [
+       -111.67,
+       33.55
+      ],
+      [
+       -111.67,
+       33.56
+      ],
+      [
+       -111.69,
+       33.61
+      ],
+      [
+       -111.68,
+       33.65
+      ],
+      [
+       -111.65,
+       33.65
+      ],
+      [
+       -111.65,
+       33.62
+      ],
+      [
+       -111.66,
+       33.57
+      ],
+      [
+       -111.65,
+       33.55
+      ]
+     ]
+    ]
+   },
+   "properties": {
+    "@id": "https://api.weather.gov/alerts/urn:oid:2.49.0.1.840.0.8dc22f89c725848e71ed04e6f2611dec01e8660c.001.1",
+    "@type": "wx:Alert",
+    "id": "urn:oid:2.49.0.1.840.0.8dc22f89c725848e71ed04e6f2611dec01e8660c.001.1",
+    "areaDesc": "Maricopa, AZ",
+    "geocode": {
+     "SAME": [
+      "004013"
+     ],
+     "UGC": [
+      "AZC013"
+     ]
+    },
+    "affectedZones": [
+     "https://api.weather.gov/zones/county/AZC013"
+    ],
+    "references": [
+     {
+      "@id": "https://api.weather.gov/alerts/urn:oid:2.49.0.1.840.0.50eb6301ebe1c5cca90709d07f56cfc2a2614682.001.1",
+      "identifier": "urn:oid:2.49.0.1.840.0.50eb6301ebe1c5cca90709d07f56cfc2a2614682.001.1",
+      "sender": "w-nws.webmaster@noaa.gov",
+      "sent": "2026-11-06T21:19:00-07:00"
+     }
+    ],
+    "sent": "2026-11-07T10:25:00-07:00",
+    "effective": "2026-11-07T10:25:00-07:00",
+    "onset": "2026-11-07T10:25:00-07:00",
+    "expires": "2026-11-08T23:00:00-07:00",
+    "ends": "2026-11-08T23:00:00-07:00",
+    "status": "Actual",
+    "messageType": "Update",
+    "category": "Met",
+    "severity": "Severe",
+    "certainty": "Likely",
+    "urgency": "Expected",
+    "event": "Flood Warning",
+    "sender": "w-nws.webmaster@noaa.gov",
+    "senderName": "NWS Phoenix AZ",
+    "headline": "Flood Warning issued November 7 at 10:25AM MST until November 8 at 11:00PM MST by NWS Phoenix AZ",
+    "description": "* WHAT...Flooding caused by excessive rainfall continues.\n\n* WHERE...Maricopa County in south central Arizona...\n\n* WHEN...Until 1100 PM MST Sunday.\n\n* IMPACTS...Flooding of the Verde River between Fort McDowell and the\nSalt River is occurring. Recreation on or near the Verde River will\nbe unsafe.\n\n* ADDITIONAL DETAILS...\n- At 1025 AM MST, A streamflow gauge on the Verde River near the\nSalt River ",
+    "instruction": "Turn around, don't drown when encountering flooded roads. Most flood\ndeaths occur in vehicles.\n\nBe aware of your surroundings and do not drive on flooded roads.\n\nFlooding is occurring. It is important to know where you are relative\nto streams, rivers, or creeks. Campers and hikers should avoid\nstreams or creeks.",
+    "response": "Avoid",
+    "note": null,
+    "parameters": {
+     "AWIPSidentifier": [
+      "FLWPSR"
+     ],
+     "WMOidentifier": [
+      "WGUS45 KPSR 071725"
+     ],
+     "NWSheadline": [
+      "FLOOD WARNING NOW IN EFFECT UNTIL 11 PM MST SUNDAY"
+     ],
+     "BLOCKCHANNEL": [
+      "EAS",
+      "NWEM",
+      "CMAS"
+     ],
+     "EAS-ORG": [
+      "WXR"
+     ],
+     "VTEC": [
+      "/O.EXT.KPSR.FA.W.0040.000000T0000Z-261109T0600Z/"
+     ],
+     "eventEndingTime": [
+      "2026-11-08T23:00:00-07:00"
+     ]
+    },
+    "scope": "Public",
+    "code": "IPAWSv1.0",
+    "language": "en-US",
+    "web": "http://www.weather.gov",
+    "eventCode": {
+     "SAME": [
+      "FLW"
+     ],
+     "NationalWeatherService": [
+      "FAW"
+     ]
+    }
+   }
+  },
+  {
+   "id": "https://api.weather.gov/alerts/urn:oid:2.49.0.1.840.0.64a7c6dfaa6c2c0925cb3468fc81ad12a92531bb.001.1",
+   "type": "Feature",
+   "geometry": null,
+   "properties": {
+    "@id": "https://api.weather.gov/alerts/urn:oid:2.49.0.1.840.0.64a7c6dfaa6c2c0925cb3468fc81ad12a92531bb.001.1",
+    "@type": "wx:Alert",
+    "id": "urn:oid:2.49.0.1.840.0.64a7c6dfaa6c2c0925cb3468fc81ad12a92531bb.001.1",
+    "areaDesc": "Northern Washington Coast; Grays Harbor County Coast",
+    "geocode": {
+     "SAME": [
+      "053009",
+      "053031",
+      "053027"
+     ],
+     "UGC": [
+      "WAZ330",
+      "WAZ331"
+     ]
+    },
+    "affectedZones": [
+     "https://api.weather.gov/zones/forecast/WAZ330",
+     "https://api.weather.gov/zones/forecast/WAZ331"
+    ],
+    "references": [
+     {
+      "@id": "https://api.weather.gov/alerts/urn:oid:2.49.0.1.840.0.3c07b4c0e2914dd6ad91f9440fa14fe68fdbb8ac.001.1",
+      "identifier": "urn:oid:2.49.0.1.840.0.3c07b4c0e2914dd6ad91f9440fa14fe68fdbb8ac.001.1",
+      "sender": "w-nws.webmaster@noaa.gov",
+      "sent": "2026-11-07T01:36:00-08:00"
+     },
+     {
+      "@id": "https://api.weather.gov/alerts/urn:oid:2.49.0.1.840.0.6ac84717bcb29f13d50d8d906106270c839471c3.001.1",
+      "identifier": "urn:oid:2.49.0.1.840.0.6ac84717bcb29f13d50d8d906106270c839471c3.001.1",
+      "sender": "w-nws.webmaster@noaa.gov",
+      "sent": "2026-11-07T02:01:00-08:00"
+     },
+     {
+      "@id": "https://api.weather.gov/alerts/urn:oid:2.49.0.1.840.0.62b13bfe4c32be95fea48adf48066078516733dd.001.1",
+      "identifier": "urn:oid:2.49.0.1.840.0.62b13bfe4c32be95fea48adf48066078516733dd.001.1",
+      "sender": "w-nws.webmaster@noaa.gov",
+      "sent": "2026-11-07T02:02:00-08:00"
+     }
+    ],
+    "sent": "2026-11-07T13:17:00-08:00",
+    "effective": "2026-11-07T13:17:00-08:00",
+    "onset": "2026-11-07T16:00:00-08:00",
+    "expires": "2026-11-07T23:30:00-08:00",
+    "ends": "2026-11-08T04:00:00-08:00",
+    "status": "Actual",
+    "messageType": "Update",
+    "category": "Met",
+    "severity": "Severe",
+    "certainty": "Likely",
+    "urgency": "Expected",
+    "event": "High Wind Warning",
+    "sender": "w-nws.webmaster@noaa.gov",
+    "senderName": "NWS Seattle WA",
+    "headline": "High Wind Warning issued November 7 at 1:17PM PST until November 8 at 4:00AM PST by NWS Seattle WA",
+    "description": "* WHAT...South winds 25 to 35 mph with gusts up to 60 mph expected.\n\n* WHERE...Grays Harbor County Coast and Northern Washington Coast.\n\n* WHEN...Until 4 AM PST Sunday.\n\n* IMPACTS...Damaging winds will blow down trees and power lines.\nWidespread power outages are expected. Travel will be difficult,\nespecially for high profile vehicles.\n\n* ADDITIONAL DETAILS...Strongest winds will be this evening.",
+    "instruction": "People are urged to secure loose objects that could be blown around\nor damaged by the wind.",
+    "response": "Prepare",
+    "note": null,
+    "parameters": {
+     "AWIPSidentifier": [
+      "NPWSEW"
+     ],
+     "WMOidentifier": [
+      "WWUS76 KSEW 072117"
+     ],
+     "NWSheadline": [
+      "HIGH WIND WARNING REMAINS IN EFFECT UNTIL 4 AM PST SUNDAY"
+     ],
+     "BLOCKCHANNEL": [
+      "EAS",
+      "NWEM",
+      "CMAS"
+     ],
+     "EAS-ORG": [
+      "WXR"
+     ],
+     "VTEC": [
+      "/O.CON.KSEW.HW.W.0002.261108T0000Z-261108T1200Z/"
+     ],
+     "eventEndingTime": [
+      "2026-11-08T04:00:00-08:00"
+     ]
+    },
+    "scope": "Public",
+    "code": "IPAWSv1.0",
+    "language": "en-US",
+    "web": "http://www.weather.gov",
+    "eventCode": {
+     "SAME": [
+      "HWW"
+     ],
+     "NationalWeatherService": [
+      "HWW"
+     ]
+    }
+   }
+  },
+  {
+   "id": "https://api.weather.gov/alerts/urn:oid:2.49.0.1.840.0.7217107e2c2ebb9c414b137481fdf926d1571335.001.1",
+   "type": "Feature",
+   "geometry": null,
+   "properties": {
+    "@id": "https://api.weather.gov/alerts/urn:oid:2.49.0.1.840.0.7217107e2c2ebb9c414b137481fdf926d1571335.001.1",
+    "@type": "wx:Alert",
+    "id": "urn:oid:2.49.0.1.840.0.7217107e2c2ebb9c414b137481fdf926d1571335.001.1",
+    "areaDesc": "Greenup; Carter; Boyd; Lawrence; Lawrence; Dickenson; Buchanan; Wayne; Cabell; Lincoln; Putnam; Kanawha; Mingo; Logan; Boone; Clay; McDowell; Wyoming",
+    "geocode": {
+     "SAME": [
+      "021089",
+      "021043",
+      "021019",
+      "021127",
+      "039087",
+      "051051",
+      "051027",
+      "054099",
+      "054011",
+      "054043",
+      "054079",
+      "054039",
+      "054059",
+      "054045",
+      "054005",
+      "054015",
+      "054047",
+      "054109"
+     ],
+     "UGC": [
+      "KYZ101",
+      "KYZ102",
+      "KYZ103",
+      "KYZ105",
+      "OHZ087",
+      "VAZ003",
+      "VAZ004",
+      "WVZ005",
+      "WVZ006",
+      "WVZ013",
+      "WVZ014",
+      "WVZ015",
+      "WVZ024",
+      "WVZ025",
+      "WVZ026",
+      "WVZ027",
+      "WVZ033",
+      "WVZ034"
+     ]
+    },
+    "affectedZones": [
+     "https://api.weather.gov/zones/forecast/KYZ101",
+     "https://api.weather.gov/zones/forecast/KYZ102",
+     "https://api.weather.gov/zones/forecast/KYZ103"
+    ],
+    "references": [
+     {
+      "@id": "https://api.weather.gov/alerts/urn:oid:2.49.0.1.840.0.005f78a6024b825a0f63e8f63701124f23377edf.001.2",
+      "identifier": "urn:oid:2.49.0.1.840.0.005f78a6024b825a0f63e8f63701124f23377edf.001.2",
+      "sender": "w-nws.webmaster@noaa.gov",
+      "sent": "2026-11-07T08:52:00-05:00"
+     },
+     {
+      "@id": "https://api.weather.gov/alerts/urn:oid:2.49.0.1.840.0.005f78a6024b825a0f63e8f63701124f23377edf.002.1",
+      "identifier": "urn:oid:2.49.0.1.840.0.005f78a6024b825a0f63e8f63701124f23377edf.002.1",
+      "sender": "w-nws.webmaster@noaa.gov",
+      "sent": "2026-11-07T08:52:00-05:00"
+     }
+    ],
+    "sent": "2026-11-07T16:37:00-05:00",
+    "effective": "2026-11-07T16:37:00-05:00",
+    "onset": "2026-11-08T00:00:00-05:00",
+    "expires": "2026-11-08T00:45:00-05:00",
+    "ends": "2026-11-08T10:00:00-05:00",
+    "status": "Actual",
+    "messageType": "Update",
+    "category": "Met",
+    "severity": "Severe",
+    "certainty": "Likely",
+    "urgency": "Expected",
+    "event": "Freeze Warning",
+    "sender": "w-nws.webmaster@noaa.gov",
+    "senderName": "NWS Charleston WV",
+    "headline": "Freeze Warning issued November 7 at 4:37PM EST until November 8 at 10:00AM EST by NWS Charleston WV",
+    "description": "* WHAT...Sub-freezing temperatures as low as 31 expected.\n\n* WHERE...Portions of northeast Kentucky, southeast Ohio, southwest\nVirginia, and central, southern, and western West Virginia.\n\n* WHEN...From midnight tonight to 10 AM EST Sunday.\n\n* IMPACTS...Frost and freeze conditions could kill crops, other\nsensitive vegetation and possibly damage unprotected outdoor\nplumbing.",
+    "instruction": "Additional information can be found at https://www.weather.gov/rlx as\nwell as on our X and Facebook pages.",
+    "response": "Execute",
+    "note": null,
+    "parameters": {
+     "AWIPSidentifier": [
+      "NPWRLX"
+     ],
+     "WMOidentifier": [
+      "WWUS71 KRLX 072137"
+     ],
+     "NWSheadline": [
+      "FREEZE WARNING REMAINS IN EFFECT FROM MIDNIGHT TONIGHT TO 10 AM EST SUNDAY"
+     ],
+     "BLOCKCHANNEL": [
+      "EAS",
+      "NWEM",
+      "CMAS"
+     ],
+     "VTEC": [
+      "/O.CON.KRLX.FZ.W.0014.261108T0500Z-261108T1500Z/"
+     ],
+     "eventEndingTime": [
+      "2026-11-08T10:00:00-05:00"
+     ]
+    },
+    "scope": "Public",
+    "code": "IPAWSv1.0",
+    "language": "en-US",
+    "web": "http://www.weather.gov",
+    "eventCode": {
+     "SAME": [
+      "NWS"
+     ],
+     "NationalWeatherService": [
+      "FZW"
+     ]
+    }
+   }
+  },
+  {
+   "id": "https://api.weather.gov/alerts/urn:oid:2.49.0.1.840.0.000e63d734b9faefc28e32108e5329a6e5049139.001.1",
+   "type": "Feature",
+   "geometry": null,
+   "properties": {
+    "@id": "https://api.weather.gov/alerts/urn:oid:2.49.0.1.840.0.000e63d734b9faefc28e32108e5329a6e5049139.001.1",
+    "@type": "wx:Alert",
+    "id": "urn:oid:2.49.0.1.840.0.000e63d734b9faefc28e32108e5329a6e5049139.001.1",
+    "areaDesc": "Zapata; Jim Hogg; Brooks",
+    "geocode": {
+     "SAME": [
+      "048505",
+      "048247",
+      "048047"
+     ],
+     "UGC": [
+      "TXZ248",
+      "TXZ249",
+      "TXZ250"
+     ]
+    },
+    "affectedZones": [
+     "https://api.weather.gov/zones/forecast/TXZ248",
+     "https://api.weather.gov/zones/forecast/TXZ249",
+     "https://api.weather.gov/zones/forecast/TXZ250"
+    ],
+    "references": [],
+    "sent": "2026-11-07T11:34:00-06:00",
+    "effective": "2026-11-07T11:34:00-06:00",
+    "onset": "2026-11-07T18:00:00-06:00",
+    "expires": "2026-11-08T04:00:00-06:00",
+    "ends": "2026-11-09T09:00:00-06:00",
+    "status": "Actual",
+    "messageType": "Alert",
+    "category": "Met",
+    "severity": "Severe",
+    "certainty": "Possible",
+    "urgency": "Future",
+    "event": "Flood Watch",
+    "sender": "w-nws.webmaster@noaa.gov",
+    "senderName": "NWS Brownsville TX",
+    "headline": "Flood Watch issued November 7 at 11:34AM CST until November 9 at 9:00AM CST by NWS Brownsville TX",
+    "description": "Multiple rounds of locally heavy rainfall are expected between\nSaturday night and early Monday morning across the Rio Grande Plains\nand Brush Country.  The first round is most likely between midnight\nand mid-morning Sunday, when 1 to 2 inches with locally 3 or more\ninches of rain may fall. The second round is expected Sunday night\ninto early Monday morning, when an additional 1 to 3 inches with\nlo",
+    "instruction": "You should monitor later forecasts and be alert for possible Flood\nWarnings. Those living in areas prone to flooding should be prepared\nto take action should flooding develop.",
+    "response": "Prepare",
+    "note": null,
+    "parameters": {
+     "AWIPSidentifier": [
+      "FFABRO"
+     ],
+     "WMOidentifier": [
+      "WGUS64 KBRO 071734"
+     ],
+     "NWSheadline": [
+      "FLOOD WATCH IN EFFECT FROM 6 PM CST THIS EVENING THROUGH MONDAY MORNING"
+     ],
+     "BLOCKCHANNEL": [
+      "EAS",
+      "NWEM",
+      "CMAS"
+     ],
+     "EAS-ORG": [
+      "WXR"
+     ],
+     "VTEC": [
+      "/O.NEW.KBRO.FA.A.0003.261108T0000Z-261109T1500Z/"
+     ],
+     "eventEndingTime": [
+      "2026-11-09T09:00:00-06:00"
+     ]
+    },
+    "scope": "Public",
+    "code": "IPAWSv1.0",
+    "language": "en-US",
+    "web": "http://www.weather.gov",
+    "eventCode": {
+     "SAME": [
+      "FFA"
+     ],
+     "NationalWeatherService": [
+      "FAA"
+     ]
+    }
+   }
+  }
+ ],
+ "title": "Current watches, warnings, and advisories for United States land zones",
+ "updated": "2026-11-07T23:05:50+00:00"
+}

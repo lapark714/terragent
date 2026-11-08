@@ -1,0 +1,44 @@
+{
+ "_note": "SYNTHETIC. Shape from docs/platform/monid.md §3.11 A (Akta's recorded connector fixture); no paid run was made to record this. Re-record with one real run when the wallet allows.",
+ "count": 2,
+ "limit": 10,
+ "offset": 0,
+ "total": 2,
+ "data": [
+  {
+   "id": "a1b2c3d4-0001",
+   "title": "Example Minerals starts a 12-hole drilling program at its Nevada gold project",
+   "url": "https://news.example.com/example-minerals-drilling",
+   "publisher": "Example Mining Wire",
+   "published_date": "2026-11-05T14:00:00Z",
+   "sentiment": "positive",
+   "sentiment_score": 0.61,
+   "ai_summary": "Example Minerals Corp said it began a 12-hole reverse-circulation drilling program on claims in Nye County, Nevada.",
+   "word_count": 410,
+   "original_language": "en",
+   "countries": ["US"],
+   "industries": [{ "name": "Metal Ore Mining", "code": "2122", "is_primary": true }],
+   "tags": [{ "name": "Exploration & Drilling", "code": "MN02", "is_primary": true }],
+   "company_mentions": [{ "uuid": "c0ffee00-0001", "name": "Example Minerals Corp", "website": "https://example-minerals.com", "is_primary": true }],
+   "article_type": { "code": "news", "label": "News" },
+   "is_press_release": true,
+   "entities": { "person": [], "location": ["Nye County", "Nevada"], "product": [], "event": [] },
+   "newsworthiness_score": 0.42,
+   "group_id": "g-0001"
+  },
+  {
+   "id": "a1b2c3d4-0002",
+   "title": "Sample Copper files new lode claims in Arizona",
+   "url": "https://news.example.com/sample-copper-claims",
+   "publisher": "Example Resource News",
+   "published_date": "2026-11-04T09:30:00Z",
+   "sentiment": "neutral",
+   "ai_summary": "Sample Copper Ltd filed 40 new lode claims adjacent to its existing project in Pinal County, Arizona.",
+   "countries": ["US"],
+   "tags": [{ "name": "Mining Claims", "code": "MN05", "is_primary": true }],
+   "company_mentions": [{ "uuid": "c0ffee00-0002", "name": "Sample Copper Ltd", "website": null, "is_primary": true }],
+   "entities": { "location": ["Pinal County", "Arizona"] },
+   "newsworthiness_score": 0.35
+  }
+ ]
+}

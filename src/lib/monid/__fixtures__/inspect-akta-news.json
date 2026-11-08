@@ -1,0 +1,218 @@
+{
+ "provider": "akta",
+ "providerName": "akta",
+ "endpoint": "/v1/news",
+ "description": "Search news and business events by company, industry, topic or keyword.",
+ "summary": "Search real-time news and historical archives on any topic, trend or keyword using query, or headline text using title. For a company, pass its domain or akta UUID as company for mentions, or primary_company when the company must be the main subject. For an industry or sector, pass akta industry codes from Industry Search, or supported NAICS, SIC, IPTC or IAB codes. Covers funding, M&A, launches, partnerships, leadership changes, layoffs, financial, regulatory, litigation, cybersecurity and risk events. Filter by type_list, sentiment_list, countries, news_score_list, people, locations, products, events and excluded publishers; see the News Signals news-tag reference for the full type taxonomy. Group duplicates and paginate. Use for GTM or buying signals, account monitoring, diligence, sector trackers and industry digests. Returns article IDs, titles, AI summaries, URLs, dates, publishers, event tags, sentiment and company mentions. Optimized for AI agents with compact, structured output for reliable routing.",
+ "method": "GET",
+ "input": {
+  "queryParams": {
+   "$schema": "https://json-schema.org/draft/2020-12/schema",
+   "type": "object",
+   "properties": {
+    "company": {
+     "type": "string",
+     "minLength": 1,
+     "description": "Company website (e.g. 'https://canva.com') or the company uuid returned by the akta Company Search endpoint. A bare company name is NOT accepted here — resolve it via company-search first."
+    },
+    "primary_company": {
+     "description": "Only articles where this company (website or uuid) is the primary subject. Cannot be combined with 'company'.",
+     "type": "string",
+     "minLength": 1
+    },
+    "query": {
+     "description": "Open-ended topic to track a theme or commodity that doesn't map to a specific company or industry (e.g. 'crude oil price developments', 'FDA drug approval').",
+     "type": "string",
+     "minLength": 1
+    },
+    "title": {
+     "description": "Search articles whose title matches the text entered.",
+     "type": "string",
+     "minLength": 1
+    },
+    "industry": {
+     "description": "Filter by industry code(s) from akta's 30,000+ industry taxonomy. Resolve a plain-text topic into codes via the Industry Search endpoint (/v1/industry/search). Comma-separated on the wire.",
+     "type": "array",
+     "items": {
+      "type": "string",
+      "minLength": 1
+     }
+    },
+    "start_date": {
+     "description": "Start of the date range (YYYY-MM-DD). Non-enterprise plans are limited to a 6-month lookback.",
+     "type": "string",
+     "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+    },
+    "end_date": {
+     "description": "End of the date range (YYYY-MM-DD). Defaults to today.",
+     "type": "string",
+     "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+    },
+    "limit": {
+     "description": "Maximum number of articles to return. Default 10, max 100.",
+     "type": "integer",
+     "minimum": 1,
+     "maximum": 100
+    },
+    "offset": {
+     "description": "Number of results to skip before returning records (pagination).",
+     "type": "integer",
+     "minimum": 0,
+     "maximum": 9007199254740991
+    },
+    "full_text": {
+     "description": "Include each article's full text. Default true; false shrinks the response.",
+     "type": "boolean"
+    },
+    "group_articles": {
+     "description": "When true, groups similar articles from the same event.",
+     "type": "boolean"
+    },
+    "news_score_list": {
+     "description": "Filter by news score tier. Accepted: High, Medium, Low, all. Default all.",
+     "type": "array",
+     "items": {
+      "type": "string",
+      "enum": [
+       "High",
+       "Medium",
+       "Low",
+       "all"
+      ]
+     }
+    },
+    "countries": {
+     "description": "Filter by the country of the event. ISO country codes, comma-separated on the wire.",
+     "type": "array",
+     "items": {
+      "type": "string",
+      "minLength": 1
+     }
+    },
+    "blacklisted": {
+     "description": "Publisher domains to exclude. Comma-separated on the wire.",
+     "type": "array",
+     "items": {
+      "type": "string",
+      "minLength": 1
+     }
+    },
+    "type_list": {
+     "description": "Filter by news type code (see https://playground.akta.pro/news-tags.csv). Default all.",
+     "type": "array",
+     "items": {
+      "type": "string"
+     }
+    },
+    "sentiment_list": {
+     "description": "Filter by sentiment. Accepted: positive, negative, neutral, all. Default all.",
+     "type": "array",
+     "items": {
+      "type": "string",
+      "enum": [
+       "positive",
+       "negative",
+       "neutral",
+       "all"
+      ]
+     }
+    },
+    "entity_person_list": {
+     "description": "Filter by named people. Comma-separated on the wire.",
+     "type": "array",
+     "items": {
+      "type": "string",
+      "minLength": 1
+     }
+    },
+    "entity_location_list": {
+     "description": "Filter by named locations. Comma-separated on the wire.",
+     "type": "array",
+     "items": {
+      "type": "string",
+      "minLength": 1
+     }
+    },
+    "entity_product_list": {
+     "description": "Filter by named products. Comma-separated on the wire.",
+     "type": "array",
+     "items": {
+      "type": "string",
+      "minLength": 1
+     }
+    },
+    "entity_event_list": {
+     "description": "Filter by named events. Comma-separated on the wire.",
+     "type": "array",
+     "items": {
+      "type": "string",
+      "minLength": 1
+     }
+    },
+    "naics_code_list": {
+     "description": "Filter by NAICS codes. Comma-separated on the wire.",
+     "type": "array",
+     "items": {
+      "type": "string",
+      "minLength": 1
+     }
+    },
+    "sic_code_list": {
+     "description": "Filter by SIC codes. Comma-separated on the wire.",
+     "type": "array",
+     "items": {
+      "type": "string",
+      "minLength": 1
+     }
+    },
+    "iptc_code_list": {
+     "description": "Filter by IPTC codes. Comma-separated on the wire.",
+     "type": "array",
+     "items": {
+      "type": "string",
+      "minLength": 1
+     }
+    },
+    "iab_code_list": {
+     "description": "Filter by IAB codes. Comma-separated on the wire.",
+     "type": "array",
+     "items": {
+      "type": "string",
+      "minLength": 1
+     }
+    }
+   },
+   "additionalProperties": false
+  }
+ },
+ "price": {
+  "type": "PER_RESULT",
+  "amount": {
+   "value": 0.0005,
+   "currency": "USD"
+  },
+  "flatFee": {
+   "value": 0.005,
+   "currency": "USD"
+  }
+ },
+ "docUrl": "https://agent-docs.akta.pro/api-reference/news-signals",
+ "notes": [],
+ "tags": [
+  "verified",
+  "no-markup"
+ ],
+ "categories": [
+  "akta",
+  "company-enrichment",
+  "company-news",
+  "funding-data"
+ ],
+ "metrics": {
+  "status": "healthy",
+  "runTimeMs": {
+   "p50": 5827,
+   "p95": 17506
+  }
+ }
+}

@@ -1,0 +1,119 @@
+{
+ "items": [
+  {
+   "supportedX402Networks": [
+    "eip155:8453",
+    "eip155:143"
+   ],
+   "provider": "akta",
+   "providerDisplayName": "akta",
+   "providerDisplayDescription": "akta.pro provides structured company data with deep private-company coverage, company discovery, real-time and historica",
+   "endpoint": "/v1/news",
+   "displayName": "Track Business Events",
+   "displayDescription": "Search news and business events by company, industry, topic or keyword.",
+   "price": {
+    "type": "PER_RESULT",
+    "amount": {
+     "value": 0.0005,
+     "currency": "USD"
+    },
+    "flatFee": {
+     "value": 0.005,
+     "currency": "USD"
+    }
+   },
+   "tags": [
+    "verified",
+    "no-markup"
+   ],
+   "categories": [
+    "akta",
+    "company-enrichment",
+    "company-news",
+    "funding-data"
+   ],
+   "metrics": {
+    "status": "healthy",
+    "runTimeMs": {
+     "p50": 5827,
+     "p95": 17506
+    }
+   },
+   "score": 0.87
+  },
+  {
+   "supportedX402Networks": [
+    "eip155:8453",
+    "eip155:143"
+   ],
+   "provider": "apollo",
+   "providerDisplayName": "Apollo",
+   "providerDisplayDescription": "Apollo.io — B2B sales intelligence for agents: search 230M+ people and 30M+ companies, enrich people and organizations (",
+   "endpoint": "/news_articles/search",
+   "displayName": "Apollo News Articles Search",
+   "displayDescription": "Search news articles about companies by organization, category, and date.",
+   "price": {
+    "type": "PER_CALL",
+    "amount": {
+     "value": 0.026,
+     "currency": "USD"
+    }
+   },
+   "tags": [
+    "verified",
+    "no-markup"
+   ],
+   "categories": [
+    "apollo",
+    "company-enrichment",
+    "company-news"
+   ],
+   "metrics": {
+    "status": "stable",
+    "runTimeMs": {
+     "p50": 1588,
+     "p95": 1686
+    }
+   },
+   "score": 0.7982
+  },
+  {
+   "supportedX402Networks": [
+    "eip155:8453",
+    "eip155:143"
+   ],
+   "provider": "context.dev",
+   "providerDisplayName": "Context.dev",
+   "providerDisplayDescription": "The unified web context API for agents — scrape any URL to clean Markdown, HTML, JSON, or prebuilt-parser records (Googl",
+   "endpoint": "/news/search",
+   "displayName": "Search Company News",
+   "displayDescription": "Search live and historical company news by name, domain, ticker, or ISIN.",
+   "price": {
+    "type": "PER_UNIT",
+    "amount": {
+     "value": 0.002,
+     "currency": "USD"
+    },
+    "per": 1,
+    "unit": "credit"
+   },
+   "tags": [
+    "verified",
+    "no-markup"
+   ],
+   "categories": [
+    "company-news",
+    "context-dev"
+   ],
+   "metrics": {
+    "status": "healthy",
+    "runTimeMs": {
+     "p50": 3753,
+     "p95": 6312
+    }
+   },
+   "score": 0.7956
+  }
+ ],
+ "total": 200
+}

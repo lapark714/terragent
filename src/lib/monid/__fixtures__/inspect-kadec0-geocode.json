@@ -1,0 +1,65 @@
+{
+ "provider": "api.kadec0.xyz",
+ "providerName": "api.kadec0.xyz",
+ "endpoint": "/v1/geocode",
+ "description": "Geocoding and reverse geocoding. Converts an address or place name to latitude/longitude, or coordinates back to an address.",
+ "summary": "Geocoding and reverse geocoding. Converts an address or place name to latitude/longitude, or coordinates back to an address.",
+ "method": "GET",
+ "input": {
+  "queryParams": {
+   "anyOf": [
+    {
+     "required": [
+      "q"
+     ]
+    },
+    {
+     "required": [
+      "lat",
+      "lon"
+     ]
+    }
+   ],
+   "type": "object",
+   "properties": {
+    "q": {
+     "description": "address (forward geocode)",
+     "type": "string"
+    },
+    "maxItems": {
+     "default": "5",
+     "type": "string"
+    },
+    "lon": {
+     "description": "longitude (reverse geocode)",
+     "type": "string"
+    },
+    "lat": {
+     "description": "latitude (reverse geocode)",
+     "type": "string"
+    }
+   },
+   "required": []
+  }
+ },
+ "price": {
+  "type": "PER_CALL",
+  "amount": {
+   "value": 0.02,
+   "currency": "USD"
+  }
+ },
+ "docUrl": "https://api.kadec0.xyz/v1/geocode",
+ "notes": [],
+ "tags": [
+  "no-markup"
+ ],
+ "categories": [],
+ "metrics": {
+  "status": "stable",
+  "runTimeMs": {
+   "p50": 3262,
+   "p95": 4771
+  }
+ }
+}

@@ -1,0 +1,78 @@
+{
+ "provider": "hunterio",
+ "providerName": "Hunter",
+ "endpoint": "/email-finder",
+ "description": "Find the most likely email address from a person's name and their company.",
+ "summary": "Resolve a person (first/last or full name, or a LinkedIn handle) at a company (domain or name) into their most likely email address. Returns the address with a 0-100 confidence score, job title, company, LinkedIn/Twitter handles, phone number when known, public source URLs (up to 20), and an automatic deliverability verification (valid / accept_all / unknown). Supports a max_duration knob (3-20s) to trade latency for accuracy. A no-find returns email: null and costs nothing. Suited for contact discovery, outreach list building, and completing a known person into a reachable address.",
+ "method": "GET",
+ "input": {
+  "queryParams": {
+   "$schema": "https://json-schema.org/draft/2020-12/schema",
+   "type": "object",
+   "properties": {
+    "domain": {
+     "type": "string",
+     "minLength": 1,
+     "description": "Domain name, e.g. 'stripe.com'. Preferred over company — it skips the name-to-domain conversion."
+    },
+    "company": {
+     "type": "string",
+     "minLength": 3,
+     "description": "Company name, e.g. 'Stripe'. When both company and domain are given, domain wins."
+    },
+    "linkedin_handle": {
+     "description": "LinkedIn profile handle of the person. When given, the name fields are optional.",
+     "type": "string",
+     "minLength": 1
+    },
+    "first_name": {
+     "type": "string",
+     "minLength": 1
+    },
+    "last_name": {
+     "type": "string",
+     "minLength": 1
+    },
+    "full_name": {
+     "description": "The person's full name. first_name + last_name gives better results when available.",
+     "type": "string",
+     "minLength": 1
+    },
+    "max_duration": {
+     "description": "Max seconds upstream may spend refining the result (3-20, default 10). Longer is more accurate.",
+     "type": "integer",
+     "minimum": 3,
+     "maximum": 20
+    }
+   },
+   "description": "Identify the company (domain, company, or linkedin_handle) and the person (first_name + last_name, or full_name — optional with linkedin_handle)."
+  }
+ },
+ "price": {
+  "type": "PER_RESULT",
+  "amount": {
+   "value": 0.0245,
+   "currency": "USD"
+  },
+  "notes": [
+   "Charged only when an address is found."
+  ]
+ },
+ "docUrl": "https://hunter.io/api-documentation/v2#email-finder",
+ "notes": [],
+ "tags": [
+  "verified",
+  "no-markup"
+ ],
+ "categories": [
+  "hunterio",
+  "people-enrichment"
+ ],
+ "metrics": {
+  "status": "stable",
+  "runTimeMs": {
+   "p50": 3906,
+   "p95": 7407
+  }
+ }
+}

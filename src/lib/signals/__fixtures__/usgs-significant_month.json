@@ -1,0 +1,141 @@
+{
+ "type": "FeatureCollection",
+ "metadata": {
+  "generated": 1794092843000,
+  "url": "https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/significant_month.geojson",
+  "title": "USGS Significant Earthquakes, Past Month",
+  "status": 200,
+  "api": "2.8.2",
+  "count": 14
+ },
+ "features": [
+  {
+   "type": "Feature",
+   "properties": {
+    "mag": 7,
+    "place": "189 km ENE of Nagqu, China",
+    "time": 1792679620289,
+    "updated": 1793744086682,
+    "tz": null,
+    "url": "https://earthquake.usgs.gov/earthquakes/eventpage/us6000u43g",
+    "detail": "https://earthquake.usgs.gov/earthquakes/feed/v1.0/detail/us6000u43g.geojson",
+    "felt": 8,
+    "cdi": 7.4,
+    "mmi": 8.75,
+    "alert": "orange",
+    "status": "reviewed",
+    "tsunami": 0,
+    "sig": 1006,
+    "net": "us",
+    "code": "6000u43g",
+    "ids": ",us6000u43g,",
+    "sources": ",us,",
+    "types": ",dyfi,finite-fault,general-text,ground-failure,impact-text,losspager,moment-tensor,origin,phase-data,shakemap,",
+    "nst": 134,
+    "dmin": 8.972,
+    "rms": 0.95,
+    "gap": 22,
+    "magType": "mww",
+    "type": "earthquake",
+    "title": "M 7.0 - 189 km ENE of Nagqu, China"
+   },
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     93.7837,
+     32.3376,
+     18
+    ]
+   },
+   "id": "us6000u43g"
+  },
+  {
+   "type": "Feature",
+   "properties": {
+    "mag": 5.7,
+    "place": "47 km WNW of Khuzdar, Pakistan",
+    "time": 1792213617619,
+    "updated": 1794056270348,
+    "tz": null,
+    "url": "https://earthquake.usgs.gov/earthquakes/eventpage/us6000u2y1",
+    "detail": "https://earthquake.usgs.gov/earthquakes/feed/v1.0/detail/us6000u2y1.geojson",
+    "felt": 2,
+    "cdi": 5,
+    "mmi": 7.102,
+    "alert": "yellow",
+    "status": "reviewed",
+    "tsunami": 0,
+    "sig": 651,
+    "net": "us",
+    "code": "6000u2y1",
+    "ids": ",us6000u2y1,",
+    "sources": ",us,",
+    "types": ",dyfi,ground-failure,impact-text,losspager,moment-tensor,origin,phase-data,shakemap,",
+    "nst": 125,
+    "dmin": 6.949,
+    "rms": 0.61,
+    "gap": 22,
+    "magType": "mww",
+    "type": "earthquake",
+    "title": "M 5.7 - 47 km WNW of Khuzdar, Pakistan"
+   },
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     66.1855,
+     28.0196,
+     10
+    ]
+   },
+   "id": "us6000u2y1"
+  },
+  {
+   "type": "Feature",
+   "properties": {
+    "mag": 7.7,
+    "place": "10 km WSW of Pitaloza Arriba, Panama",
+    "time": 1791568565537,
+    "updated": 1794056918951,
+    "tz": null,
+    "url": "https://earthquake.usgs.gov/earthquakes/eventpage/us6000u18k",
+    "detail": "https://earthquake.usgs.gov/earthquakes/feed/v1.0/detail/us6000u18k.geojson",
+    "felt": 2018,
+    "cdi": 7.9,
+    "mmi": 8.112,
+    "alert": "orange",
+    "status": "reviewed",
+    "tsunami": 0,
+    "sig": 1790,
+    "net": "us",
+    "code": "6000u18k",
+    "ids": ",pt26282000,us6000u18k,",
+    "sources": ",pt,us,",
+    "types": ",dyfi,event-sequence,finite-fault,general-text,ground-failure,impact-text,losspager,moment-tensor,oaf,origin,phase-data,shakemap,",
+    "nst": 107,
+    "dmin": 1.797,
+    "rms": 0.62,
+    "gap": 62,
+    "magType": "mww",
+    "type": "earthquake",
+    "title": "M 7.7 - 10 km WSW of Pitaloza Arriba, Panama"
+   },
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -80.7566,
+     7.6069,
+     10
+    ]
+   },
+   "id": "us6000u18k"
+  }
+ ],
+ "bbox": [
+  -98.0489,
+  -36.4058,
+  10,
+  165.5892,
+  52.0153,
+  492.376
+ ]
+}

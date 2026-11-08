@@ -1,0 +1,15 @@
+{
+ "balance": {
+  "value": 20,
+  "currency": "USD"
+ },
+ "held": {
+  "value": 0,
+  "currency": "USD"
+ },
+ "topup": {
+  "stripe": "/v1/wallet/topup/sessions",
+  "dashboard": "https://app.monid.ai/wallet",
+  "docs": "https://monid.ai/docs/wallet"
+ }
+}

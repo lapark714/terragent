@@ -1,0 +1,90 @@
+{
+ "lid": "ARCF1",
+ "usgsId": "02296750",
+ "name": "Peace River at SR 70 Arcadia",
+ "county": "DeSoto",
+ "state": {
+  "abbreviation": "FL",
+  "name": "Florida"
+ },
+ "latitude": 27.221944444444,
+ "longitude": -81.876111111111,
+ "status": {
+  "observed": {
+   "primary": 15.72,
+   "primaryUnit": "ft",
+   "secondary": 10.3,
+   "secondaryUnit": "kcfs",
+   "floodCategory": "moderate",
+   "validTime": "2026-11-07T21:30:00Z"
+  },
+  "forecast": {
+   "primary": 15.6,
+   "primaryUnit": "ft",
+   "secondary": 10,
+   "secondaryUnit": "kcfs",
+   "floodCategory": "moderate",
+   "validTime": "2026-11-08T00:00:00Z"
+  }
+ },
+ "flood": {
+  "stageUnits": "ft",
+  "flowUnits": "cfs",
+  "categories": {
+   "major": {
+    "stage": 16,
+    "flow": -9999
+   },
+   "moderate": {
+    "stage": 14,
+    "flow": -9999
+   },
+   "minor": {
+    "stage": 11,
+    "flow": -9999
+   },
+   "action": {
+    "stage": 9,
+    "flow": -9999
+   }
+  },
+  "impacts": [
+   {
+    "stage": 21,
+    "statement": "SR-70 floods west of the Peace River bridge to CR-661. SR-70 is also flooded east of the bridge to Parker Ave."
+   },
+   {
+    "stage": 16,
+    "statement": "Up to 60 homes at River Acres are flooded. The Woman's Club and American Legion are impacted."
+   },
+   {
+    "stage": 15.5,
+    "statement": "25 homes at River Acres are impacted."
+   },
+   {
+    "stage": 15,
+    "statement": "River Acres is impacted."
+   },
+   {
+    "stage": 14,
+    "statement": "Peace River Campground floods and 6 homes at River Acres are impacted."
+   },
+   {
+    "stage": 13,
+    "statement": "Peace River Estates floods affecting several dozen homes."
+   },
+   {
+    "stage": 12,
+    "statement": "The Girl Scout camp floods."
+   },
+   {
+    "stage": 11,
+    "statement": "Access roads to river acres become flooded."
+   },
+   {
+    "stage": 10,
+    "statement": "3 to 4 homes in the river acres subdivision flood and the lowest portion of the girl scout camp floods."
+   }
+  ]
+ }
+}

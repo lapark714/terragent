@@ -1,0 +1,72 @@
+{
+ "result": {
+  "input": {
+   "address": {
+    "address": "1 Dr Carlton B Goodlett Pl, San Francisco, CA 94102"
+   },
+   "vintage": {
+    "isDefault": true,
+    "id": "4",
+    "vintageName": "Current_Current",
+    "vintageDescription": "Current Vintage - Current Benchmark"
+   },
+   "benchmark": {
+    "isDefault": true,
+    "benchmarkDescription": "Public Address Ranges - Current Benchmark",
+    "id": "4",
+    "benchmarkName": "Public_AR_Current"
+   }
+  },
+  "addressMatches": [
+   {
+    "tigerLine": {
+     "side": "L",
+     "tigerLineId": "635441232"
+    },
+    "geographies": {
+     "Counties": [
+      {
+       "GEOID": "06075",
+       "CENTLAT": "+37.7600883",
+       "AREAWATER": 479701779,
+       "STATE": "06",
+       "BASENAME": "San Francisco",
+       "OID": "27590355701186",
+       "LSADC": "06",
+       "FUNCSTAT": "C",
+       "INTPTLAT": "+37.7272391",
+       "NAME": "San Francisco County",
+       "OBJECTID": 1652,
+       "CENTLON": "-122.6941393",
+       "COUNTYCC": "H6",
+       "COUNTYNS": "00277302",
+       "AREALAND": 120913761,
+       "INTPTLON": "-123.0322294",
+       "MTFCC": "G4020",
+       "COUNTY": "075"
+      }
+     ]
+    },
+    "coordinates": {
+     "x": -122.41831039539,
+     "y": 37.778536095745
+    },
+    "addressComponents": {
+     "zip": "94102",
+     "streetName": "DR CARLTON P GOODLETT",
+     "preType": "",
+     "city": "SAN FRANCISCO",
+     "preDirection": "",
+     "suffixDirection": "",
+     "fromAddress": "1",
+     "state": "CA",
+     "suffixType": "PL",
+     "toAddress": "99",
+     "suffixQualifier": "",
+     "preQualifier": ""
+    },
+    "matchedAddress": "1 DR CARLTON P GOODLETT PL, SAN FRANCISCO, CA, 94102"
+   }
+  ]
+ }
+}
