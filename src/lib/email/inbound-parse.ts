@@ -12,6 +12,8 @@ export type SecurityVerdict = "pending" | "clear" | "review" | "unavailable";
 export interface InboundAttachment { attachmentId: string; filename: string | null; contentType: string | null; size: number }
 
 export interface InboundEmail {
+  /** Set for mail read from the Naïve cold inbox; absent for AgentMail. */
+  source?: "naive";
   inboxId: string; // the receiving inbox's address
   threadId: string;
   messageId: string; // RFC Message-ID, angle brackets included

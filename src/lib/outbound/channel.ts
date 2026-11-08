@@ -1,7 +1,7 @@
 /**
  * Who we may contact and how (NOTES 2026-11-07 "Outbound channel"):
  *   email_warm   — the contact wrote to us first, or a founder marked them warm;
- *   email_direct — cold work email, only when OUTREACH_DIRECT_EMAIL_APPROVED (AgentMail's written OK);
+ *   email_direct — cold work email from the Naïve inbox (never AgentMail), only when OUTREACH_DIRECT_EMAIL_APPROVED;
  *   contact_form — everyone else: the business's own website form, one touch per business.
  */
 import { envFlag } from "../env";

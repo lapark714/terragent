@@ -82,7 +82,8 @@ export async function planRoute(m: InboundEmail): Promise<Route> {
   }
   if ((await recentInboundCount(sender)) >= MAX_INBOUND_PER_SENDER_PER_HOUR) return { kind: "ignore", reason: "rate_limited" };
   if (match) return match;
-  return inbox === "data" ? { kind: "unmatched" } : { kind: "new_request" };
+  // A cold-inbox reply we can't tie to a prospect is recorded, not worked on (e.g. replies to the 62 emails sent before this flow existed).
+  return inbox === "data" || m.source === "naive" ? { kind: "unmatched" } : { kind: "new_request" };
 }
 
 // ---------------------------------------------------------------------------
@@ -386,7 +387,9 @@ async function newRequest(
   const sender = parseAddress(m.from);
   const req = await createRequest({
     source: "email", question: (o.question ?? questionFrom(m)).slice(0, 2000), email: sender.email, name: sender.name?.slice(0, 200), company: o.company,
-    playbook: o.playbook, priority: "inbound", threadId: m.threadId, inbox, prospectId: o.prospectId, meta: o.meta, actor: SYSTEM,
+    playbook: o.playbook, priority: "inbound",
+    // The Naïve inbox can't be answered in thread: comms-customer writes back from hello@ as a new email.
+    threadId: m.source === "naive" ? undefined : m.threadId, inbox: m.source === "naive" ? "hello" : inbox, prospectId: o.prospectId, meta: o.meta, actor: SYSTEM,
   });
   return req.id;
 }

@@ -4,6 +4,7 @@
  * Decided 2026-11-07 (NOTES H2b): terragent@ is hello; terragent-data@ and terragent-outreach@.
  */
 import type { Inbox } from "@/lib/domain";
+import { env } from "@/lib/env";
 
 export interface InboxConfig {
   role: Inbox;
@@ -29,8 +30,18 @@ export function inboxes(): Record<Inbox, InboxConfig> {
   };
 }
 
+/** The Naïve identity inbox cold email goes out from (src/lib/naive/email.ts). It counts as our outreach inbox. */
+export function coldInbox() {
+  return {
+    identityId: env("NAIVE_COLD_IDENTITY_ID") ?? "idn_9zr1eayedzpjsxvhrdcggegz2h",
+    inboxId: env("NAIVE_COLD_INBOX_ID") ?? "eml_sbxjqy0jzn9pq14ebjz9hebqcj",
+    address: (env("NAIVE_COLD_INBOX_ADDRESS") ?? "outreach@terragent-qqhrnj.usenaive.ai").toLowerCase(),
+  };
+}
+
 export function roleForAddress(address: string): Inbox | null {
   const a = address.toLowerCase();
+  if (a === coldInbox().address) return "outreach";
   for (const cfg of Object.values(inboxes())) if (cfg.address === a) return cfg.role;
   return null;
 }

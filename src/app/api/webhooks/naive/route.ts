@@ -3,6 +3,7 @@
  * dedupe on the envelope id, ack fast (Naïve wants a 2xx within 10 s), and do the work in after().
  */
 import { after } from "next/server";
+import { syncNaiveInboxThrottled } from "@/lib/email/naive-inbox";
 import { env } from "@/lib/env";
 import { claimWebhookEvent, processNaiveEvent } from "@/lib/pipeline/naive-events";
 import { getSetting, SETTING } from "@/lib/settings";
@@ -32,5 +33,6 @@ export async function POST(req: Request) {
 
   if (!(await claimWebhookEvent(evt))) return Response.json({ ok: true, duplicate: true });
   after(() => processNaiveEvent(evt).catch((e) => console.error("[webhooks/naive] processing failed:", evt.id, e)));
+  after(() => syncNaiveInboxThrottled().catch((e) => console.error("[webhooks/naive] inbox sync failed:", e)));
   return Response.json({ ok: true });
 }

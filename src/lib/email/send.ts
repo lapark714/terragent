@@ -11,6 +11,7 @@
  * inbox); a row that was sent is returned as-is, so a retry never sends twice (AgentMail also gets the key, so the
  * SDK's own retries on 429/5xx can't send twice either).
  */
+import { sendColdEmail } from "../naive/email";
 import { createHash } from "node:crypto";
 import { AgentMailError, type AgentMail } from "agentmail";
 import { inboxAddress, isOwnAddress } from "../agentmail/config";
@@ -96,9 +97,9 @@ async function deliver(args: SendEmailArgs, reply: ReplyTarget | null): Promise<
     return { status: "blocked", message_id: row.id, blocked_reason: reason };
   }
 
-  let ids: SentIds;
+  let ids: Omit<SentIds, "messageId"> & { messageId: string | null };
   try {
-    ids = await callAgentMail(args, to, content, reply);
+    ids = args.channel === "email_direct" ? await sendColdEmail({ to, subject: args.subject, text: content.text }) : await callAgentMail(args, to, content, reply);
   } catch (e) {
     const refusal = providerRefusal(e);
     if (refusal) {
@@ -125,7 +126,7 @@ async function deliver(args: SendEmailArgs, reply: ReplyTarget | null): Promise<
     message_id: row.id, inbox: args.inbox, to, kind: args.kind, channel: args.channel ?? "email", subject: args.subject,
     template_id: args.templateId ?? null, agentmail_message_id: ids.messageId, thread_id: ids.threadId,
   }, args.requestId);
-  return { status: "sent", message_id: row.id, agentmail_message_id: ids.messageId, thread_id: ids.threadId };
+  return { status: "sent", message_id: row.id, agentmail_message_id: ids.messageId ?? undefined, thread_id: ids.threadId };
 }
 
 /** Returns the first gate that blocks the send, or null. */

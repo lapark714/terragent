@@ -9,6 +9,8 @@ import { replyInThread, sendEmail, type SendEmailArgs } from "./send";
 import { AI_DISCLOSURE } from "./templates";
 import { fakeMail, memoryDb, resetDb, type FakeMail } from "./testing";
 
+vi.mock("../naive/email", () => ({ sendColdEmail: vi.fn(async (m: { to: string }) => ({ messageId: null, threadId: `naive:${m.to}` })) }));
+
 let db: Db;
 let mail: FakeMail;
 let seq = 0;
