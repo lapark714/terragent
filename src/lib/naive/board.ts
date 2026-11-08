@@ -2,6 +2,7 @@
 import { createHash } from "node:crypto";
 import type { CardPatch, VettaClient } from "@usenaive-sdk/managed-agents";
 import { getDb } from "../db/client";
+import { isOffline } from "../env";
 import type { AgentName } from "../domain";
 import { getNaive } from "./client";
 import { boardOwnerId } from "./registry";
@@ -37,6 +38,8 @@ export const generationKey = (key: string, generation: number) => cardKey(genera
  * and a card the board has already started WAKE_LIMIT times continues on a fresh card instead.
  */
 export async function upsertCard(args: { key: string; title: string; body: string; assignee: AgentName | null; status?: CardView["status"]; note?: string; mirror?: boolean }): Promise<CardView> {
+  // Offline (local UI work): never write the production board — an assigned todo card would wake a real agent.
+  if (isOffline()) return offlineCard(args);
   const naive = await getNaive();
   const board = await boardOwnerId();
   const want: Want = args.mirror
@@ -118,6 +121,7 @@ export function diffCard(
 
 /** Every card on the board. Cards are column-sorted before pagination, so always page to the end. */
 export async function listCards(): Promise<CardView[]> {
+  if (isOffline()) return [];
   const naive = await getNaive();
   const board = await boardOwnerId();
   const out: CardView[] = [];
@@ -132,4 +136,16 @@ export async function listCards(): Promise<CardView[]> {
 
 function toView(c: BoardCard): CardView {
   return { id: c.id, title: c.title, status: c.status, assignee: c.assignee, note: c.note, updated_at: c.updated_at };
+}
+
+/** What upsertCard reports in offline mode: a local, never-synced card so handoffs keep working. */
+function offlineCard(args: { key: string; title: string; assignee: AgentName | null; status?: CardView["status"]; note?: string; mirror?: boolean }): CardView {
+  return {
+    id: `crd_offline_${createHash("sha256").update(args.key).digest("hex").slice(0, 16)}`,
+    title: args.mirror ? mirrorTitle(args.title, args.assignee) : args.title.slice(0, MAX_TITLE),
+    status: args.mirror ? "doing" : (args.status ?? "todo"),
+    assignee: args.mirror ? null : args.assignee,
+    note: args.note ?? null,
+    updated_at: new Date().toISOString(),
+  };
 }

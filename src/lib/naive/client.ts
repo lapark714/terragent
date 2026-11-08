@@ -6,7 +6,7 @@
  * server key must not be able to mint keys or top up the card. Scripts may use `naive()` directly.
  */
 import { createClient, type VettaClient } from "@usenaive-sdk/managed-agents";
-import { env, requireEnv } from "../env";
+import { env, isOffline, requireEnv } from "../env";
 
 export type Naive = VettaClient;
 
@@ -29,7 +29,21 @@ export function naive(): VettaClient {
 }
 
 /** Client for runtime code: on Vercel, the key's scopes are checked once per process first. */
+/** Thrown instead of reaching Naïve in offline mode (npm run dev:local / TERRAGENT_OFFLINE=1). */
+export class NaiveOfflineError extends Error {
+  constructor() {
+    super("Offline mode: Naïve isn't called locally (TERRAGENT_OFFLINE / TERRAGENT_DB=local).");
+    this.name = "NaiveOfflineError";
+  }
+}
+
+/**
+ * The only way code reaches Naïve. Offline mode is enforced HERE as a backstop, so no path (board cards,
+ * files, sessions, spend, approvals — present or future) can touch the production org from a local run
+ * that happens to have real keys in .env. Callers that should degrade gracefully check isOffline() first.
+ */
 export async function getNaive(): Promise<VettaClient> {
+  if (isOffline()) throw new NaiveOfflineError();
   await ensureSafeRuntimeKey();
   return naive();
 }

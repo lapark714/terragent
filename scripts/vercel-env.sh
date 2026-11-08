@@ -97,7 +97,7 @@ for spec in "${VARS[@]}"; do
   fi
   flag="--sensitive"; [ "$kind" = config ] && flag="--no-sensitive"
   # Value goes over stdin; CLI output is kept (it never echoes the value) so failures are visible.
-  if out="$(printf '%s' "$val" | $VC env add "$name" -e production,preview --force "$flag" -p "$PROJECT" --scope "$SCOPE" --yes 2>&1)"; then
+  if out="$(printf '%s' "$val" | $VC env add "$name" -e production --force "$flag" -p "$PROJECT" --scope "$SCOPE" --yes 2>&1)"; then
     echo "  set   $name  ($kind)"; set_count=$((set_count + 1))
   else
     echo "  FAIL  $name: $(printf '%s' "$out" | tail -n 2 | tr '\n' ' ')" >&2; fail_count=$((fail_count + 1))
