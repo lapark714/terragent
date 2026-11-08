@@ -2,11 +2,13 @@
 /**
  * What the agents have done, newest first. Milestones show by default; routine plumbing
  * (hand-offs, status moves, skipped calls) folds behind a toggle so the story stays readable.
+ * Internal bookkeeping (revenue.*) never shows, and the customer's own actions read "You".
  */
 import { useState } from "react";
-import { actorLabel, ago, clockUtc, eventLabel, isHuman } from "@/components/format";
+import { ago, clockUtc, eventLabel, isHuman } from "@/components/format";
 import { useNow } from "@/components/useNow";
 import type { RequestProgress } from "@/lib/dashboard/public";
+import { customerEvents, timelineActor } from "./progress";
 
 type Event = RequestProgress["events"][number];
 
@@ -15,7 +17,7 @@ const ROUTINE = new Set(["status.changed", "handoff", "offline.skipped", "decisi
 export function Timeline({ events }: { events: Event[] }) {
   const [all, setAll] = useState(false);
   const now = useNow();
-  const newestFirst = [...events].reverse();
+  const newestFirst = customerEvents(events).reverse();
   // The newest event always shows, even if routine: it's the answer to "what just happened?".
   const shown = all ? newestFirst : newestFirst.filter((e, i) => i === 0 || !ROUTINE.has(e.type));
   const hidden = newestFirst.length - shown.length;
@@ -40,7 +42,7 @@ export function Timeline({ events }: { events: Event[] }) {
             </time>
             <span className="flex min-w-0 flex-wrap items-baseline gap-x-2.5">
               <span className={ROUTINE.has(e.type) ? "text-fg-2" : "text-fg"}>{eventLabel(e.type)}</span>
-              <span className="text-sm text-fg-3">{actorLabel(e.actor)}</span>
+              <span className="text-sm text-fg-3">{timelineActor(e.actor)}</span>
             </span>
           </li>
         ))}

@@ -1,12 +1,21 @@
 /** Pure helpers for the request progress view. No "use client": callable from server and client. */
+import { actorLabel, STATUS_LABEL } from "@/components/format";
 import type { RequestStatus } from "@/lib/domain";
-import type { RequestProgress } from "@/lib/dashboard/public";
-import type { TrackOutcome } from "./StepTrack";
+import type { QuoteClosedReason, RequestProgress } from "@/lib/dashboard/public";
 
-/** Status → index into STEPS (StepTrack). Delivered is past the last step. */
-const STEP_OF: Record<RequestStatus, number> = {
-  received: 0, screening: 1, clarifying: 1, planning: 2, acquiring: 3, fetching: 3, pricing: 3, quoted: 3,
-  awaiting_approval: 3, analyzing: 4, verifying: 5, revising: 5, delivering: 6, delivered: 7,
+/** The step track's labels (StepTrack). Kept here, with the status mapping, so both are tested without a DOM. */
+export const STEPS = ["Received", "Checked", "Priced", "Your choice", "Imagery", "Analysis", "Verified", "Delivered"] as const;
+
+export type TrackOutcome = "active" | "delivered" | "refused" | "stopped";
+
+/**
+ * Status → index into STEPS (StepTrack). Delivered is past the last step.
+ * Pricing v2: the free investigation (planning, acquiring, pricing) ends in a quote; "Your choice" waits for the customer
+ * to accept an option; "Imagery" is fetching it, or a founder buying paid data by hand (awaiting_approval).
+ */
+export const STEP_OF: Readonly<Record<RequestStatus, number>> = {
+  received: 0, screening: 1, clarifying: 1, planning: 2, acquiring: 2, pricing: 2, quoted: 3,
+  awaiting_approval: 4, fetching: 4, analyzing: 5, verifying: 6, revising: 6, delivering: 7, delivered: STEPS.length,
   refused: 1, failed: -1, cancelled: -1,
 };
 
@@ -18,11 +27,56 @@ export function trackOf(p: Pick<RequestProgress, "status">): { step: number; out
   return { step: STEP_OF[p.status], outcome: "active" };
 }
 
-/** Statuses where the ball is with the customer or a founder; the Outcome block explains, so no "agent is on it". */
+/**
+ * Statuses where the ball is with the customer or a founder; the Outcome block explains, so no "agent is on it".
+ * Since pricing v2, awaiting_approval means a founder is buying the paid data the customer chose, by hand.
+ */
 const WAITING_ON_PERSON: ReadonlySet<RequestStatus> = new Set(["clarifying", "quoted", "awaiting_approval"]);
 
+/**
+ * Whether Outcome shows the quote ("Your choice"): status quoted with a pricing v2 quote, or any open accept link
+ * with no option chosen yet. Older single-price quotes have no `quote` and keep the plain "reply to accept" text.
+ */
+export const showsQuoteChoice = (p: Pick<RequestProgress, "status" | "terminal" | "quote">): boolean =>
+  !p.terminal && !!p.quote && (p.status === "quoted" || (!!p.quote.accept_url && !p.quote.accepted_option_id));
+
+/** The compact "You chose option B …" line: once an option is accepted, until the answer is delivered (then the answer speaks). */
+export const showsChosenOption = (p: Pick<RequestProgress, "status" | "terminal" | "quote">): boolean =>
+  !!p.quote?.accepted_option_id && p.status !== "delivered" && !showsQuoteChoice(p);
+
 /** Whether to show the "agent is on it" card. */
-export const agentIsWorking = (p: Pick<RequestProgress, "status" | "terminal">) => !p.terminal && !WAITING_ON_PERSON.has(p.status);
+export const agentIsWorking = (p: Pick<RequestProgress, "status" | "terminal" | "quote">) =>
+  !p.terminal && !WAITING_ON_PERSON.has(p.status) && !showsQuoteChoice(p);
+
+const CLOSED_HEADING: Record<Exclude<QuoteClosedReason, "accepted">, string> = {
+  expired: "Your quote has expired",
+  superseded: "Replaced by a newer quote",
+  closed: "This quote is closed",
+};
+
+/**
+ * The status line above the outcome. STATUS_LABEL, except while the quote block shows a quote that can no longer be
+ * accepted (expired, replaced, request closed): then the heading says so too, instead of "Your quote is ready".
+ */
+export function headingOf(p: Pick<RequestProgress, "status" | "terminal" | "quote">): string {
+  const q = p.quote;
+  if (q && showsQuoteChoice(p) && !q.accepted_option_id && q.closed_reason && q.closed_reason !== "accepted") return CLOSED_HEADING[q.closed_reason];
+  return STATUS_LABEL[p.status];
+}
+
+type ProgressEvent = RequestProgress["events"][number];
+
+/** Internal bookkeeping that never belongs on the customer's timeline (revenue.committed, revenue.stated_willingness …). */
+const isInternalEvent = (type: string) => type.startsWith("revenue.");
+
+/** The events the customer's timeline shows, in the order given. */
+export const customerEvents = <E extends Pick<ProgressEvent, "type">>(events: readonly E[]): E[] => events.filter((e) => !isInternalEvent(e.type));
+
+/** Actors that are the customer themselves: "customer (link)" (the Accept button), and any other "customer…" actor. */
+const isCustomerActor = (actor: string | null) => !!actor && /^customer\b/i.test(actor);
+
+/** Who did it, as the customer reads it: "You" for their own actions, else the shared actorLabel. */
+export const timelineActor = (actor: string | null) => (isCustomerActor(actor) ? "You" : actorLabel(actor));
 
 /** When the current owner took over: the latest hand-off or status move, else the request's last update. */
 export function ownerSince(p: Pick<RequestProgress, "events" | "updatedAt" | "createdAt">): string {

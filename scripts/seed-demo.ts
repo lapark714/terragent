@@ -18,7 +18,10 @@ import { gridDisk, latLngToCell } from "h3-js";
 import { seedProviders } from "../db/seeds/providers";
 import { createDb, type Db } from "../src/lib/db/client";
 import { migrate } from "../src/lib/db/migrate";
-import type { AgentName, BBox, DecisionKind, Playbook, RequestSource, RequestStatus } from "../src/lib/domain";
+import {
+  type AgentName, type BBox, type DecisionKind, optionPriceLow, type Playbook, type QuoteOption, type QuoteOptionId, type RequestSource,
+  type RequestStatus,
+} from "../src/lib/domain";
 import { seedTemplates } from "../src/lib/email/template-library";
 import { bboxAround } from "../src/lib/geo/h3";
 import { newId, newToken } from "../src/lib/ids";
@@ -197,12 +200,82 @@ interface ReportSeed {
   paidEstimate?: { would_show: string; est_cost_usd: number; provider_id: string };
 }
 
+/**
+ * A pricing v2 quote (migration 080): 1–3 options, nothing runs until the customer accepts one. The legacy money
+ * columns mirror the accepted option, else the recommended one (the low end of a range), as create_quote does.
+ */
+interface QuoteV2Seed { options: QuoteOption[]; recommended: QuoteOptionId; accepted?: QuoteOptionId }
+
 interface RequestSeed {
   key: string; source: RequestSource; playbook: Playbook; status: RequestStatus; owner: AgentName | null; question: string;
   location: string | null; lat: number | null; lon: number | null; created: number; updated: number;
   customer?: { name: string | null; email: string; company?: string }; prospect?: string; price?: number; refusal?: string;
-  path: RequestStatus[]; report?: ReportSeed; quote?: { price: number; status: string; auto: boolean; data?: number; analysis?: number };
+  path: RequestStatus[]; report?: ReportSeed; quote?: { price: number; status: string; data?: number; analysis?: number; v2?: QuoteV2Seed };
 }
+
+type QuoteData = QuoteOption["data"][number];
+const freeData = (provider_id: string, product: string, data_type: QuoteData["data_type"], epochs: number, area_km2: number): QuoteData => ({
+  provider_id, product, data_type, resolution_m: 10, epochs, area_km2, billable_km2: area_km2, unit_price_usd: 0, data_cost_usd: 0,
+  data_cost_range_usd: null, needs_supplier_quote: false,
+});
+
+/** Ivory Cocoa's three plots: free 10 m check, a 50 cm archive image, or a new capture whose supplier price isn't confirmed. */
+export const COCOA_OPTIONS: QuoteOption[] = [
+  {
+    option_id: "A", label: "Free satellite check", kind: "free_data",
+    answers: "Shows any clearing larger than about half a hectare on the three plots since January 2024, from free 10 m Sentinel-2 imagery and Global Forest Watch alerts.",
+    data: [freeData("pc-sentinel-2-l2a", "Sentinel-2 L2A scenes", "optical", 2, 6), freeData("gfw-integrated-alerts", "GFW integrated alerts", "alerts", 1, 6)],
+    analysis_cost_usd: 1.5, risk_buffer_usd: 1.5, margin_usd: 26, price_usd: 29, price_range_usd: null,
+    delivery_time: "About an hour after you accept", confidence: "medium", notes: [],
+  },
+  {
+    option_id: "B", label: "Sharp archive image", kind: "archive",
+    answers: "Shows individual felled trees, new paths and burn patches on each plot from a 50 cm image taken in October, compared with free Sentinel-2 from 2024.",
+    data: [
+      freeData("pc-sentinel-2-l2a", "Sentinel-2 L2A scenes", "optical", 2, 6),
+      { provider_id: "sw-skysat-50cm", product: "archive 0.5 m, 2026-10-24 pass", data_type: "optical", resolution_m: 0.5, epochs: 1, area_km2: 6, billable_km2: 8,
+        unit_price_usd: 6, data_cost_usd: 48, data_cost_range_usd: null, needs_supplier_quote: false },
+    ],
+    analysis_cost_usd: 4, risk_buffer_usd: 8, margin_usd: 25, price_usd: 85, price_range_usd: null,
+    delivery_time: "1–2 days after you accept", confidence: "high", notes: ["demo: placeholder unit price"],
+  },
+  {
+    option_id: "C", label: "New capture of all three plots", kind: "tasking",
+    answers: "Orders a fresh 30 cm capture of the plots for an up-to-date, plot-by-plot record for your EUDR due-diligence file.",
+    data: [{ provider_id: "sw-pneo-30cm", product: "tasking 0.3 m", data_type: "optical", resolution_m: 0.3, epochs: 1, area_km2: 6, billable_km2: 25,
+      unit_price_usd: null, data_cost_usd: null, data_cost_range_usd: [380, 600], needs_supplier_quote: true }],
+    analysis_cost_usd: 6, risk_buffer_usd: 14, margin_usd: 50, price_usd: null, price_range_usd: [450, 700],
+    delivery_time: "5–10 days after you accept, weather permitting", confidence: "high", notes: ["demo: supplier price not confirmed"],
+  },
+];
+
+/** Pacific Re's quake zone: they accepted the 30 cm archive pass, which a founder now buys by hand (the held order below). */
+export const HUALIEN_OPTIONS: QuoteOption[] = [
+  {
+    option_id: "A", label: "Free radar and optical overview", kind: "free_data",
+    answers: "Shows which parts of the industrial zone changed after the quake, from free 10 m Sentinel-1 radar and Sentinel-2. It can't count individual roofs.",
+    data: [freeData("pc-sentinel-2-l2a", "Sentinel-2 L2A scenes", "optical", 2, 5), freeData("pc-sentinel-1-rtc", "Sentinel-1 RTC radar", "radar", 2, 5)],
+    analysis_cost_usd: 2, risk_buffer_usd: 1.5, margin_usd: 25.5, price_usd: 29, price_range_usd: null,
+    delivery_time: "About an hour after you accept", confidence: "low", notes: [],
+  },
+  {
+    option_id: "B", label: "Sharp archive image", kind: "archive",
+    answers: "Counts damaged roofs across the 5 km² zone from a 30 cm Pléiades Neo image taken two days after the quake.",
+    data: [{ provider_id: "sw-pneo-30cm", product: "archive 0.3 m, 2026-11-05 pass", data_type: "optical", resolution_m: 0.3, epochs: 1, area_km2: 5, billable_km2: 5,
+      unit_price_usd: 42, data_cost_usd: 210, data_cost_range_usd: null, needs_supplier_quote: false }],
+    analysis_cost_usd: 9, risk_buffer_usd: 21, margin_usd: 55, price_usd: 295, price_range_usd: null,
+    delivery_time: "1–2 days after you accept", confidence: "high", notes: ["demo: placeholder unit price"],
+  },
+];
+
+/** The option whose price the legacy columns mirror: the accepted one, else the recommended one. */
+const mirroredOption = (v2: QuoteV2Seed) => v2.options.find((o) => o.option_id === (v2.accepted ?? v2.recommended))!;
+const optionDataCost = (o: QuoteOption) => o.data.reduce((sum, d) => sum + (d.data_cost_usd ?? d.data_cost_range_usd?.[0] ?? 0), 0);
+const v2Quote = (status: string, v2: QuoteV2Seed): NonNullable<RequestSeed["quote"]> => {
+  const o = mirroredOption(v2);
+  return { price: optionPriceLow(o), status, data: optionDataCost(o), analysis: o.analysis_cost_usd, v2 };
+};
+const fmtOptionPrice = (o: QuoteOption) => (o.price_usd !== null ? `$${o.price_usd}` : `$${o.price_range_usd![0]}–$${o.price_range_usd![1]}`);
 
 const OWNER: Record<RequestStatus, AgentName | null> = {
   received: "comms-customer", screening: "comms-customer", clarifying: "comms-customer", planning: "planner", acquiring: "acquisition",
@@ -215,7 +288,7 @@ const STAGE: Partial<Record<RequestStatus, string>> = {
   awaiting_approval: "acquisition", fetching: "acquisition", analyzing: "analysis", verifying: "verify", revising: "report", delivering: "deliver",
 };
 
-const INBOUND_DONE: RequestStatus[] = ["received", "screening", "planning", "acquiring", "pricing", "analyzing", "verifying", "delivering", "delivered"];
+const INBOUND_DONE: RequestStatus[] = ["received", "screening", "planning", "acquiring", "pricing", "quoted", "analyzing", "verifying", "delivering", "delivered"];
 const SAMPLE_DONE: RequestStatus[] = ["received", "planning", "acquiring", "analyzing", "verifying", "delivering", "delivered"];
 const upTo = (path: RequestStatus[], last: RequestStatus) => path.slice(0, path.indexOf(last) + 1);
 
@@ -224,7 +297,7 @@ const REQUESTS: RequestSeed[] = [
     key: "r_houston", source: "portal", playbook: "inbound", status: "delivered", owner: "comms-customer",
     question: "Did floodwater reach our loading docks during last week's storm?", location: "Clinton Drive warehouse district, Houston, TX",
     lat: 29.745, lon: -95.3, created: 1322, updated: 1315, customer: { name: "Maria Okafor", email: "maria.okafor@gulfcoastcold.example", company: "Gulf Coast Cold Storage" },
-    path: INBOUND_DONE, quote: { price: 29, status: "accepted", auto: true },
+    path: INBOUND_DONE, quote: { price: 29, status: "accepted" },
     report: {
       site: "houston", title: "No standing water at the Clinton Drive docks on Oct 17", recipe: "flood_extent", layer: "inbound", confidence: "medium",
       answer: "The clear Sentinel-2 pass on Oct 17 shows no standing water on the loading apron or the access road. The water index over the docks is the same as in July, so any flooding had drained before the satellite passed.",
@@ -240,7 +313,7 @@ const REQUESTS: RequestSeed[] = [
     key: "r_sonoma", source: "email", playbook: "inbound", status: "delivered", owner: "comms-customer",
     question: "How much vegetation did our vineyard blocks lose between May and September?", location: "Carneros, Sonoma County, CA",
     lat: 38.255, lon: -122.4, created: 1180, updated: 1174, customer: { name: "Tom Reyes", email: "tom@valleyoakwines.example", company: "Valley Oak Wines" },
-    path: INBOUND_DONE, quote: { price: 29, status: "accepted", auto: true },
+    path: INBOUND_DONE, quote: { price: 29, status: "accepted" },
     report: {
       site: "sonoma", title: "Vineyard greenness down 0.21 NDVI since May, as expected after harvest", recipe: "vegetation_health", layer: "inbound", confidence: "high", index: true,
       answer: "Mean NDVI over the vineyard blocks fell from 0.62 on May 18 to 0.41 on September 30. The drop is even across the blocks, the usual post-harvest pattern, with no block standing out as stressed.",
@@ -252,7 +325,7 @@ const REQUESTS: RequestSeed[] = [
     key: "r_mead", source: "api", playbook: "inbound", status: "delivered", owner: "comms-customer",
     question: "Has the shoreline in the coves east of Callville Bay moved since May?", location: "Callville Bay, Lake Mead, NV",
     lat: 36.14, lon: -114.62, created: 1030, updated: 1026, customer: { name: null, email: "agent@hydrowatch.example" },
-    path: INBOUND_DONE, quote: { price: 29, status: "accepted", auto: true },
+    path: INBOUND_DONE, quote: { price: 29, status: "accepted" },
     report: {
       site: "lakemead", title: "Water area in the coves down 4.6 % since May", recipe: "change_detection", layer: "inbound", confidence: "high",
       answer: "Open water inside the 2.4 km box shrank from 2.18 to 2.08 km² between May 24 and October 1. The new bare shoreline is a 20–60 m band, widest at the heads of the coves.",
@@ -264,7 +337,7 @@ const REQUESTS: RequestSeed[] = [
     key: "r_kelowna", source: "portal", playbook: "inbound", status: "delivered", owner: "comms-customer",
     question: "Has tree cover around our downtown office changed since the spring?", location: "Downtown Kelowna, BC, Canada",
     lat: 49.88, lon: -119.49, created: 860, updated: 852, customer: { name: "Priya Nand", email: "priya.nand@example.com" },
-    path: INBOUND_DONE, quote: { price: 29, status: "accepted", auto: true },
+    path: INBOUND_DONE, quote: { price: 29, status: "accepted" },
     report: {
       site: "kelowna", title: "Tree canopy unchanged; greenness down with autumn leaf colour", recipe: "vegetation_health", layer: "inbound", confidence: "medium", index: true,
       answer: "Tree canopy on the blocks around the office covers the same 0.52 km² as on May 3. Mean NDVI is lower on October 20 (0.31 against 0.38) because the street trees are turning, not because any were removed.",
@@ -276,7 +349,7 @@ const REQUESTS: RequestSeed[] = [
     key: "r_atacama", source: "email", playbook: "inbound", status: "delivered", owner: "comms-customer",
     question: "Have the evaporation ponds next to our concession expanded this year?", location: "Salar de Atacama, Chile",
     lat: -23.5, lon: -68.25, created: 640, updated: 633, customer: { name: "Diego Fuentes", email: "dfuentes@andesbrine.example", company: "Andes Brine Consulting" },
-    path: INBOUND_DONE, quote: { price: 39, status: "accepted", auto: true, data: 0, analysis: 1.9 },
+    path: INBOUND_DONE, quote: { price: 39, status: "accepted", data: 0, analysis: 1.9 },
     report: {
       site: "atacama", title: "Pond area up 0.18 km² since June", recipe: "change_detection", layer: "inbound", confidence: "high",
       answer: "Bright brine surface inside the box grew from 1.42 to 1.60 km² between June 11 and September 19, all of it in two new cells on the north-east edge.",
@@ -288,7 +361,7 @@ const REQUESTS: RequestSeed[] = [
     key: "r_bingham", source: "portal", playbook: "inbound", status: "delivering", owner: "comms-customer",
     question: "Did the tailings footprint grow at the Bingham Canyon site since July?", location: "Bingham Canyon, UT",
     lat: 40.52, lon: -112.15, created: 34, updated: 4, customer: { name: "Sam Whitfield", email: "sam@saltlakeesg.example", company: "Salt Lake ESG Research" },
-    path: upTo(INBOUND_DONE, "delivering"), quote: { price: 35, status: "accepted", auto: true },
+    path: upTo(INBOUND_DONE, "delivering"), quote: { price: 35, status: "accepted" },
     report: {
       site: "bingham", title: "Disturbed ground up 0.07 km² on the south-east bench", recipe: "mining_indicators", layer: "inbound", confidence: "medium",
       answer: "Bare, iron-stained ground inside the box grew by about 0.07 km² between July 10 and October 1, along the south-east bench. These are surface indicators of disturbance, not evidence of what is being mined.",
@@ -300,7 +373,7 @@ const REQUESTS: RequestSeed[] = [
     key: "r_chaco", source: "api", playbook: "inbound", status: "verifying", owner: "verifier",
     question: "Any new clearing on the ranch parcel since May? It's for an EUDR due-diligence file.", location: "Boquerón, Paraguay",
     lat: -21.5, lon: -60.5, created: 22, updated: 2, customer: { name: null, email: "compliance@granchaco-beef.example" },
-    path: upTo(INBOUND_DONE, "verifying"), quote: { price: 29, status: "accepted", auto: true },
+    path: upTo(INBOUND_DONE, "verifying"), quote: { price: 29, status: "accepted" },
     report: {
       site: "chaco", title: "New clearing of about 0.4 km² on the parcel's east side", recipe: "forest_loss", layer: "inbound", confidence: "medium", index: true,
       answer: "NDVI dropped by more than 0.3 over about 0.4 km² on the east side of the parcel between May 5 and September 20, consistent with fresh clearing; GFW alerts overlap the same area.",
@@ -312,26 +385,32 @@ const REQUESTS: RequestSeed[] = [
     key: "r_westland", source: "portal", playbook: "inbound", status: "analyzing", owner: "analytics",
     question: "Did the hail storm damage the greenhouse roofs on our site?", location: "Westland, Netherlands", lat: 52.0, lon: 4.2,
     created: 18, updated: 9, customer: { name: "Joost de Vries", email: "joost@westlandkas.example", company: "Westland Kas" },
-    path: upTo(INBOUND_DONE, "analyzing"), quote: { price: 29, status: "accepted", auto: true },
+    path: upTo(INBOUND_DONE, "analyzing"), quote: { price: 29, status: "accepted" },
   },
   {
     key: "r_hualien", source: "email", playbook: "inbound", status: "awaiting_approval", owner: "acquisition",
     question: "We need to count damaged roofs in the Hualien industrial zone after the M6.1 quake.", location: "Hualien County, Taiwan", lat: 23.6, lon: 121.55,
     created: 210, updated: 186, customer: { name: "Lin Chen", email: "l.chen@pacificre.example", company: "Pacific Re Analytics" },
-    path: ["received", "screening", "planning", "acquiring", "awaiting_approval"],
+    path: ["received", "screening", "planning", "acquiring", "pricing", "quoted", "awaiting_approval"],
+    quote: v2Quote("accepted", { options: HUALIEN_OPTIONS, recommended: "B", accepted: "B" }),
   },
   {
+    // KNOWN DEMO INCONSISTENCY: a pre-v2 founder price check (needs_approval), which pricing v2 removed. Its status page
+    // says the imagery is being bought, which isn't true for this row. Kept because the dashboard approvals card
+    // (seed-demo.test.ts: getApprovals().quotes) and Aarush's demo use it. To fix, with Aarush: give it an accepted paid
+    // option with a held order, or move it to another status, and update that test.
     key: "r_quarries", source: "portal", playbook: "inbound", status: "awaiting_approval", owner: "pricing",
     question: "Monthly checks of six quarry sites for unpermitted expansion.", location: "Pima County, AZ", lat: 31.9, lon: -111.0,
     created: 120, updated: 104, customer: { name: "Ana Morales", email: "amorales@desertwatch.example", company: "Desert Watch" },
     path: ["received", "screening", "planning", "acquiring", "pricing", "awaiting_approval"],
-    quote: { price: 174, status: "needs_approval", auto: false, data: 0, analysis: 9 },
+    quote: { price: 174, status: "needs_approval", data: 0, analysis: 9 },
   },
   {
     key: "r_cocoa", source: "email", playbook: "inbound", status: "quoted", owner: "comms-customer",
     question: "What would a deforestation check of our three cocoa supplier plots cost?", location: "Soubré, Côte d'Ivoire", lat: 5.79, lon: -6.59,
     created: 95, updated: 70, customer: { name: "Awa Koné", email: "awa.kone@ivorycocoa.example", company: "Ivory Cocoa Sourcing" },
-    path: ["received", "screening", "planning", "acquiring", "pricing", "quoted"], quote: { price: 39, status: "sent", auto: true },
+    path: ["received", "screening", "planning", "acquiring", "pricing", "quoted"],
+    quote: v2Quote("sent", { options: COCOA_OPTIONS, recommended: "B" }),
   },
   {
     key: "r_colusa", source: "portal", playbook: "inbound", status: "pricing", owner: "pricing",
@@ -373,20 +452,20 @@ const REQUESTS: RequestSeed[] = [
   {
     key: "r_failed", source: "api", playbook: "inbound", status: "failed", owner: "analytics",
     question: "Daily cloud-free image of a barley field", location: "Aberdeenshire, UK", lat: 57.2, lon: -2.6,
-    created: 560, updated: 520, customer: { name: null, email: "agri-bot@example.com" }, path: ["received", "screening", "planning", "acquiring", "pricing", "analyzing", "failed"],
-    quote: { price: 29, status: "accepted", auto: true },
+    created: 560, updated: 520, customer: { name: null, email: "agri-bot@example.com" }, path: ["received", "screening", "planning", "acquiring", "pricing", "quoted", "analyzing", "failed"],
+    quote: { price: 29, status: "accepted" },
   },
   {
     key: "r_cancelled", source: "email", playbook: "inbound", status: "cancelled", owner: "comms-customer",
     question: "Burn scar check near Paradise, CA", location: "Paradise, CA", lat: 39.76, lon: -121.62,
     created: 1100, updated: 1020, customer: { name: "Erin Walsh", email: "erin.walsh@example.com" }, path: ["received", "screening", "planning", "acquiring", "pricing", "quoted", "cancelled"],
-    quote: { price: 29, status: "declined", auto: true },
+    quote: { price: 29, status: "declined" },
   },
   // Free samples from the signal engine (enter at planning, delivered by comms-outreach).
   {
     key: "s_butte", source: "signal", playbook: "disasters", status: "delivered", owner: "comms-outreach", prospect: "foothill",
     question: "Free sample: fire and burn-scar check of Foothill Orchard Co-op's packing shed and orchards", location: "Butte County, CA",
-    lat: 39.76, lon: -121.62, created: 338, updated: 305, path: SAMPLE_DONE, quote: { price: 49, status: "sent", auto: true },
+    lat: 39.76, lon: -121.62, created: 338, updated: 305, path: SAMPLE_DONE, quote: { price: 49, status: "sent" },
     report: {
       site: "butte", title: "No new burn scar on the orchards; fire activity stayed 6 km north", recipe: "burn_severity", layer: "disasters", confidence: "high",
       answer: "Burn-severity index (dNBR) over the orchards and packing shed is 0.03, well under the 0.1 burn threshold. The VIIRS detections that triggered the alert sit about 6 km north, outside your blocks.",
@@ -419,7 +498,7 @@ const REQUESTS: RequestSeed[] = [
   {
     key: "s_silver", source: "signal", playbook: "mining", status: "delivered", owner: "comms-outreach", prospect: "esmeralda",
     question: "Free sample: surface change on Esmeralda Lithium Exploration's claim block", location: "Esmeralda County, NV",
-    lat: 37.75, lon: -117.63, created: 1188, updated: 1150, path: SAMPLE_DONE, quote: { price: 45, status: "accepted", auto: true },
+    lat: 37.75, lon: -117.63, created: 1188, updated: 1150, path: SAMPLE_DONE, quote: { price: 45, status: "accepted" },
     report: {
       site: "silverpeak", title: "Two new drill-pad scars on the claim block since June", recipe: "mining_indicators", layer: "mining", confidence: "medium",
       answer: "Two new bright clearings of about 0.01 km² each appear on the east side of the claim block between June 29 and November 6, with a fresh access track between them. Clay-ratio indicators rose slightly there.",
@@ -643,13 +722,25 @@ export async function seedDemo(db: Db, opts: { now?: Date } = {}): Promise<DemoC
           alternatives: [{ option: "Planet SkySat 50 cm via SkyWatch", cost_usd: 160, why_not: "Not needed to answer this question" }],
         });
       }
-      if (status === "pricing" && r.quote) {
+      if (status === "pricing" && r.quote?.v2) {
+        const { options, recommended } = r.quote.v2;
+        const rec = options.find((o) => o.option_id === recommended)!;
         await decision({
           requestId: id, kind: "pricing", agent: "pricing", minutesAgo: t - 0.3,
-          choice: `$${r.quote.price} (${r.quote.auto ? "auto-approved" : "needs founder approval"})`,
-          reasoning: r.quote.auto
-            ? `data $${r.quote.data ?? 0} + analysis $${r.quote.analysis ?? 1.5} (Naïve spend so far + estimate) + margin; free-data floor $29.`
-            : `Six sites at the $29 free-data floor = $174, above the $50 auto-approve cap, so it waits for a founder.`,
+          choice: `${options.length} options; recommended ${rec.option_id} at ${fmtOptionPrice(rec)}`,
+          reasoning: options.map((o) => `${o.option_id} ${o.kind}: data $${optionDataCost(o)} + analysis $${o.analysis_cost_usd} + risk $${o.risk_buffer_usd} + margin $${o.margin_usd} = ${fmtOptionPrice(o)}`).join("; ") +
+            ". Server-priced (pricing v2); the customer chooses.",
+          alternatives: options.filter((o) => o.option_id !== rec.option_id).map((o) => ({
+            option: `${o.option_id}: ${o.label}`, cost_usd: optionPriceLow(o), why_not: `offered as an alternative at ${fmtOptionPrice(o)}; the customer chooses`,
+          })),
+        });
+      } else if (status === "pricing" && r.quote) {
+        await decision({
+          requestId: id, kind: "pricing", agent: "pricing", minutesAgo: t - 0.3,
+          choice: r.quote.status === "needs_approval" ? `$${r.quote.price} (pre-v2 quote held for a founder)` : `$${r.quote.price} quoted; waits for the customer to accept`,
+          reasoning: r.quote.status === "needs_approval"
+            ? `Six sites at the $29 free-data floor = $174. Made before pricing v2, when quotes above $50 waited for a founder; a re-quote replaces it.`
+            : `data $${r.quote.data ?? 0} + analysis $${r.quote.analysis ?? 1.5} + margin; free-data floor $29. Nothing beyond the investigation runs until the customer accepts.`,
         });
       }
       if (status === "analyzing" && r.report) {
@@ -674,14 +765,54 @@ export async function seedDemo(db: Db, opts: { now?: Date } = {}): Promise<DemoC
         ? [{ label: "Six site reports from free Sentinel-2 data", amount_usd: 174 }]
         : [...(data ? [{ label: "Satellite data", amount_usd: data }] : []), { label: "Analysis and verified report", amount_usd: r.quote.price - data }];
       const quoted = r.path.includes("pricing") ? tick(r.path.indexOf("pricing")) - 0.5 : r.created - 1;
-      await q(
-        `INSERT INTO quotes (id, request_id, data_cost_usd, analysis_cost_usd, margin_usd, price_usd, auto_approved, status, line_items, created_at, updated_at)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$10)`,
-        [quoteId, id, data, analysis, r.quote.price - data - analysis, r.quote.price, r.quote.auto, r.quote.status, json(lineItems), at(quoted)],
-      );
-      await event("quote.created", "pricing", { quote_id: quoteId, price_usd: r.quote.price, auto_approved: r.quote.auto }, id, quoted);
-      if (["sent", "accepted", "declined"].includes(r.quote.status)) await event("quote.sent", "comms-customer", { quote_id: quoteId }, id, quoted - 0.3);
-      if (r.quote.status === "accepted") await event("quote.accepted", "comms-customer", { quote_id: quoteId }, id, quoted - 0.6);
+      const v2 = r.quote.v2;
+      if (v2) {
+        // Pricing v2: options, an accept token for the link, valid 7 days; accepted only after the quote went out.
+        const accepted = v2.accepted ? v2.options.find((o) => o.option_id === v2.accepted)! : null;
+        const acceptedAt = accepted ? (r.path.includes("quoted") ? tick(r.path.indexOf("quoted")) - 0.5 : quoted - 0.6) : null;
+        const items = [...(data ? [{ label: "Satellite data", amount_usd: data }] : []), { label: "Analysis and verified report", amount_usd: r.quote.price - data }];
+        await q(
+          `INSERT INTO quotes (id, request_id, data_cost_usd, analysis_cost_usd, margin_usd, price_usd, auto_approved, status, line_items, created_at, updated_at,
+             options, recommended_option_id, accepted_option_id, accepted_at, accept_token, valid_until)
+           VALUES ($1,$2,$3,$4,$5,$6,false,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)`,
+          [quoteId, id, data, analysis, Math.max(0, r.quote.price - data - analysis), r.quote.price, r.quote.status, json(items), at(quoted),
+            at(acceptedAt ?? quoted), json(v2.options), v2.recommended, accepted?.option_id ?? null, acceptedAt === null ? null : at(acceptedAt),
+            newToken(), at(quoted - 7 * 24 * 60)],
+        );
+        const rec = v2.options.find((o) => o.option_id === v2.recommended)!;
+        await event("quote.created", "pricing", {
+          quote_id: quoteId, options: v2.options.length, recommended_option_id: rec.option_id, price_usd: rec.price_usd, price_range_usd: rec.price_range_usd, auto_approved: false,
+        }, id, quoted);
+        await event("quote.sent", "comms-customer", { quote_id: quoteId }, id, quoted - 0.3);
+        if (accepted && acceptedAt !== null) {
+          await decision({
+            requestId: id, kind: "pricing", agent: "comms-customer", minutesAgo: acceptedAt + 0.05,
+            choice: `customer accepted option ${accepted.option_id} (${accepted.label}) at ${fmtOptionPrice(accepted)}`,
+            reasoning: `Customer replied in the quote thread choosing option ${accepted.option_id}. Option kind ${accepted.kind}; ${accepted.answers}`,
+            alternatives: v2.options.filter((o) => o !== accepted).map((o) => ({ option: `${o.option_id}: ${o.label}`, cost_usd: optionPriceLow(o), why_not: `not chosen (${fmtOptionPrice(o)})` })),
+          });
+          await event("quote.accepted", "comms-customer", {
+            quote_id: quoteId, option_id: accepted.option_id, kind: accepted.kind, price_usd: accepted.price_usd, price_range_usd: accepted.price_range_usd,
+          }, id, acceptedAt);
+        }
+      } else {
+        await q(
+          `INSERT INTO quotes (id, request_id, data_cost_usd, analysis_cost_usd, margin_usd, price_usd, auto_approved, status, line_items, created_at, updated_at)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$10)`,
+          [quoteId, id, data, analysis, r.quote.price - data - analysis, r.quote.price, false, r.quote.status, json(lineItems), at(quoted)],
+        );
+        await event("quote.created", "pricing", { quote_id: quoteId, price_usd: r.quote.price, auto_approved: false }, id, quoted);
+        if (["sent", "accepted", "declined"].includes(r.quote.status)) await event("quote.sent", "comms-customer", { quote_id: quoteId }, id, quoted - 0.3);
+        if (r.quote.status === "accepted") {
+          // Work started only once the customer said yes in the thread (no quote clears itself).
+          const acceptedAt = r.path.includes("quoted") ? tick(r.path.indexOf("quoted")) - 0.5 : quoted - 0.6;
+          await decision({
+            requestId: id, kind: "pricing", agent: "comms-customer", minutesAgo: acceptedAt + 0.05,
+            choice: `customer accepted the $${r.quote.price} quote`, reasoning: "Customer replied in the quote thread: go ahead.",
+          });
+          await event("quote.accepted", "comms-customer", { quote_id: quoteId }, id, acceptedAt);
+        }
+      }
     }
 
     // Report ----------------------------------------------------------------------
@@ -752,13 +883,13 @@ export async function seedDemo(db: Db, opts: { now?: Date } = {}): Promise<DemoC
   // Paid-data decision held for a founder (spec §10.2), and a past one a founder turned down -------------------
   const hualien = requestId.get("r_hualien")!;
   await decision({
-    requestId: hualien, kind: "source_selection", agent: "acquisition", minutesAgo: 192,
+    requestId: hualien, kind: "source_selection", agent: "acquisition", minutesAgo: 197,
     choice: "Sentinel-2 L2A searched first: clear pass on Nov 5, but 10 m",
     reasoning: "A free scene exists two days after the quake, but roofs in the zone are 15–40 m across: 10 m pixels can't tell a damaged roof from an intact one.",
   });
   await decision({
-    requestId: hualien, kind: "free_vs_paid", agent: "acquisition", minutesAgo: 190, choice: "paid",
-    reasoning: "Counting damaged roofs needs sub-metre imagery. Compared three archive offers for the 5 km² zone; Pléiades Neo is the cheapest pass after the quake. Held for a founder: we never buy data automatically.",
+    requestId: hualien, kind: "free_vs_paid", agent: "acquisition", minutesAgo: 196, choice: "paid",
+    reasoning: "Counting damaged roofs needs sub-metre imagery. Compared three archive offers for the 5 km² zone; Pléiades Neo is the cheapest pass after the quake, so pricing offers it as option B. Nothing is bought until the customer accepts; then a founder places the order by hand.",
     alternatives: [
       { option: "Sentinel-2 L2A (free, 10 m)", cost_usd: 0, why_not: "Pixels larger than most roofs; can't count damage" },
       { option: "Planet SkySat 50 cm via SkyWatch", cost_usd: 245, why_not: "Pricier for the same area, and the pass is a day later" },
@@ -769,7 +900,7 @@ export async function seedDemo(db: Db, opts: { now?: Date } = {}): Promise<DemoC
   await q(
     `INSERT INTO orders (id, request_id, provider_id, product, area_km2, est_cost_usd, status, justification, supplier_quote_usd, meta, created_at, updated_at)
      VALUES ($1,$2,'sw-pneo-30cm','Pléiades Neo 30 cm archive, 2026-11-05 pass',5,210,'awaiting_approval',$3,null,$4,$5,$5)`,
-    [heldOrder, hualien, "Free 10 m Sentinel-2 can't resolve individual roofs (15–40 m). A 30 cm pass two days after the quake can. Customer asked for a roof count.", json(DEMO), at(188)],
+    [heldOrder, hualien, `Customer accepted option B (${HUALIEN_OPTIONS[1].label}): ${HUALIEN_OPTIONS[1].answers}`, json(DEMO), at(188)],
   );
   await event("supplier_quote.requested", "comms-suppliers", { order_id: heldOrder, provider_id: "sw-pneo-30cm" }, hualien, 189);
   await event("order.prepared", "acquisition", { order_id: heldOrder, provider_id: "sw-pneo-30cm", est_cost_usd: 210 }, hualien, 188);

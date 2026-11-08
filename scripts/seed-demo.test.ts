@@ -5,17 +5,18 @@ import { promisify } from "node:util";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { createDb, setDb, type Db } from "../src/lib/db/client";
 import { migrate } from "../src/lib/db/migrate";
-import { REQUEST_STATUSES } from "../src/lib/domain";
+import { QuoteOption, REQUEST_STATUSES } from "../src/lib/domain";
 
 vi.mock("../src/lib/naive/board", () => ({ listCards: vi.fn(async () => []) }));
 vi.mock("../src/lib/naive/spend", () => ({ getSpendSummary: vi.fn(async () => ({ total_usd: 0, by_agent: {}, balance_usd: 0 })) }));
 vi.mock("../src/lib/naive/sessions", () => ({ listPendingApprovals: vi.fn(async () => []), decideApproval: vi.fn(async () => {}) }));
 
-const { assertDemoTarget, demoDataDir, NotLocalError, pcImageUrl, seedDemo, siteBox, SITES } = await import("./seed-demo");
+const { assertDemoTarget, COCOA_OPTIONS, demoDataDir, HUALIEN_OPTIONS, NotLocalError, pcImageUrl, seedDemo, siteBox, SITES } = await import("./seed-demo");
 const { getLiveSnapshot } = await import("../src/lib/dashboard/snapshot");
 const { getGlobeData } = await import("../src/lib/dashboard/globe");
 const { getApprovals } = await import("../src/lib/dashboard/approvals");
-const { getPublicReport } = await import("../src/lib/dashboard/public");
+const { getPublicReport, getQuoteByToken, getRequestProgress } = await import("../src/lib/dashboard/public");
+const { acceptToken } = await import("../src/components/request/quote");
 const { invalidateLive } = await import("../src/lib/dashboard/rows");
 const { seedProviders } = await import("../db/seeds/providers");
 
@@ -177,6 +178,44 @@ describe("demo data", () => {
       "SELECT counterpart_email AS e FROM messages WHERE counterpart_email IS NOT NULL UNION SELECT customer_email FROM requests WHERE customer_email IS NOT NULL",
     );
     for (const { e } of emails) expect(e).toMatch(/@([a-z0-9-]+\.)*(example|example\.com)$/);
+  });
+
+  it("has a pricing v2 quote waiting for the customer: three options, an accept link, valid for a week", async () => {
+    for (const o of [...COCOA_OPTIONS, ...HUALIEN_OPTIONS]) expect(() => QuoteOption.parse(o), o.option_id).not.toThrow();
+    const [row] = await db.query<{ id: string; accept_token: string; meta: { demo?: boolean } }>(
+      `SELECT r.id, q.accept_token, r.meta FROM requests r JOIN quotes q ON q.id = r.quote_id WHERE r.status = 'quoted' AND jsonb_array_length(q.options) = 3`,
+    );
+    expect(row.meta.demo).toBe(true);
+    const p = (await getRequestProgress(row.id))!;
+    const quote = p.quote!;
+    expect(quote.options.map((o) => [o.option_id, o.kind, o.resolution_m, o.price_usd, o.price_range_usd, o.needs_supplier_quote])).toEqual([
+      ["A", "free_data", 10, 29, null, false],
+      ["B", "archive", 0.5, 85, null, false],
+      ["C", "tasking", 0.3, null, [450, 700], true],
+    ]);
+    expect(quote).toMatchObject({ recommended_option_id: "B", accepted_option_id: null, closed_reason: null });
+    expect(acceptToken(quote.accept_url)).toBe(row.accept_token);
+    expect(Date.parse(quote.valid_until!) - Date.now()).toBeGreaterThan(6 * 86_400_000);
+    // The accept link finds the same quote (what POST /api/quotes/accept and the quote page read).
+    expect((await getQuoteByToken(row.accept_token))?.requestId).toBe(row.id);
+    // No costs, margins or suppliers reach the customer.
+    expect(JSON.stringify(quote)).not.toMatch(/margin|risk_buffer|unit_price|provider_id|sw-skysat/);
+  });
+
+  it("has a paid option the customer accepted, waiting while a founder buys the imagery", async () => {
+    const [row] = await db.query<{ id: string }>(
+      "SELECT r.id FROM requests r JOIN quotes q ON q.id = r.quote_id WHERE r.status = 'awaiting_approval' AND q.accepted_option_id IS NOT NULL",
+    );
+    const p = (await getRequestProgress(row.id))!;
+    expect(p.quote).toMatchObject({ accepted_option_id: "B", closed_reason: "accepted", accept_url: null });
+    expect(p.quote!.options.find((o) => o.option_id === "B")).toMatchObject({ kind: "archive", label: "Sharp archive image", price_usd: 295 });
+    expect(Date.parse(p.quote!.accepted_at!)).toBeLessThan(Date.parse(p.updatedAt));
+    // Its paid order is the one held for a founder, and the timeline shows the acceptance before it.
+    const held = await db.query<{ request_id: string }>("SELECT request_id FROM orders WHERE status = 'awaiting_approval'");
+    expect(held.map((o) => o.request_id)).toEqual([row.id]);
+    const types = p.events.map((e) => e.type);
+    expect(types.indexOf("quote.accepted")).toBeGreaterThan(types.indexOf("quote.sent"));
+    expect(types.indexOf("order.prepared")).toBeGreaterThan(types.indexOf("quote.accepted"));
   });
 
   it("builds image URLs for a box inside each scene", () => {

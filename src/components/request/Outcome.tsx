@@ -1,7 +1,8 @@
 "use client";
 /**
  * The one block that says what this request needs or has become: the answer when delivered,
- * a clear stop for refused / failed, or "your move" when we're waiting on the customer or a founder.
+ * a clear stop for refused / failed, the quote to choose from (pricing v2: nothing runs until the customer accepts
+ * an option), or "your move" when we're waiting on the customer or a founder.
  * Returns null while agents are simply working.
  */
 import Link from "next/link";
@@ -9,10 +10,21 @@ import { ConfidenceMeter } from "@/components/report/ConfidenceMeter";
 import { CopyLink } from "@/components/report/CopyLink";
 import type { RequestProgress } from "@/lib/dashboard/public";
 import { Elapsed } from "./Elapsed";
+import { showsQuoteChoice } from "./progress";
+import { QuoteChoice } from "./QuoteChoice";
 
 const linkClass = "text-fg underline decoration-line-strong underline-offset-4 hover:decoration-fg";
 
-function Frame({ tone, eyebrow, children }: { tone: "answer" | "stop" | "wait" | "human"; eyebrow: string; children: React.ReactNode }) {
+/**
+ * `live` (default on) announces the frame's content when it changes. Off for the quote: QuoteChoice announces its own
+ * confirmation (role=status) and errors (aria-live), and a live frame would read them twice, plus every card and button label.
+ */
+function Frame({ tone, eyebrow, live = true, children }: {
+  tone: "answer" | "stop" | "wait" | "human";
+  eyebrow: string;
+  live?: boolean;
+  children: React.ReactNode;
+}) {
   const TONE = {
     answer: "border-inbound/60 bg-panel",
     stop: "border-alert/50 bg-alert/[0.06]",
@@ -21,14 +33,19 @@ function Frame({ tone, eyebrow, children }: { tone: "answer" | "stop" | "wait" |
   } as const;
   const EYEBROW = { answer: "text-inbound-hi", stop: "text-alert", wait: "text-inbound-hi", human: "text-human" } as const;
   return (
-    <section aria-live="polite" className={`flex flex-col gap-4 rounded-lg border p-5 sm:p-6 ${TONE[tone]}`}>
+    <section aria-live={live ? "polite" : undefined} className={`flex flex-col gap-4 rounded-lg border p-5 sm:p-6 ${TONE[tone]}`}>
       <p className={`font-mono text-xs tracking-[0.08em] uppercase ${EYEBROW[tone]}`}>{eyebrow}</p>
       {children}
     </section>
   );
 }
 
-export function Outcome({ progress: p, hello }: { progress: RequestProgress; hello: string }) {
+export function Outcome({ progress: p, hello, onQuoteAccepted }: {
+  progress: RequestProgress;
+  hello: string;
+  /** Called after an Accept button posts, so the page can poll at once. */
+  onQuoteAccepted?: () => void;
+}) {
   const mail = (
     <a href={`mailto:${hello}?subject=${encodeURIComponent(`About ${p.id}`)}`} className={linkClass}>
       {hello}
@@ -93,6 +110,14 @@ export function Outcome({ progress: p, hello }: { progress: RequestProgress; hel
     );
   }
 
+  if (p.quote && showsQuoteChoice(p)) {
+    return (
+      <Frame tone="wait" eyebrow="Your quote" live={false}>
+        <QuoteChoice quote={p.quote} requestId={p.id} contact={mail} onAccepted={onQuoteAccepted} />
+      </Frame>
+    );
+  }
+
   if (p.status === "clarifying" || p.status === "quoted") {
     return (
       <Frame tone="wait" eyebrow="Your move">
@@ -108,10 +133,10 @@ export function Outcome({ progress: p, hello }: { progress: RequestProgress; hel
 
   if (p.status === "awaiting_approval") {
     return (
-      <Frame tone="human" eyebrow="Waiting on a founder">
+      <Frame tone="human" eyebrow="A founder is buying your data">
         <p className="leading-relaxed text-fg">
-          Our rules need a person to approve this step (a price above our limit, or buying paid imagery). The agents
-          continue as soon as a founder decides.
+          {p.quote?.accepted_option_id ? "Buying the imagery for the option you chose." : "Buying the imagery for your request."} We place
+          paid data orders by hand; the analysis starts as soon as the data arrives.
         </p>
       </Frame>
     );

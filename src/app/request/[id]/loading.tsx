@@ -14,8 +14,8 @@ export default function Loading() {
         <Bar className="h-8 w-2/3" />
         <Bar className="mt-2 h-4 w-40" />
       </div>
-      <div className="mb-10 grid grid-cols-7 gap-1.5" aria-hidden>
-        {Array.from({ length: 7 }, (_, i) => (
+      <div className="mb-10 grid grid-cols-8 gap-1.5" aria-hidden>
+        {Array.from({ length: 8 }, (_, i) => (
           <Bar key={i} className="h-1.5 rounded-full" />
         ))}
       </div>
