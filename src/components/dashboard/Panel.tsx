@@ -25,7 +25,7 @@ export function Panel({ title, meta, className = "", bodyClassName = "px-4 pb-4"
 /** Renders a panel's data, or a plain explanation when that query failed (other panels keep working). */
 export function PanelData<T>({ result, children }: { result: PanelResult<T> | undefined; children: (data: T) => React.ReactNode }) {
   if (!result) return <Quiet>Waiting for the first update.</Quiet>;
-  if (!result.ok && result.suspended) return <Quiet>Paused with the database (Neon quota, NOTES H4c). This panel fills in again once a founder resumes it.</Quiet>;
+  if (!result.ok && result.suspended) return <Quiet>Paused with the database (Neon quota, NOTES H4c). This panel fills in again once the database is back.</Quiet>;
   if (!result.ok) return <Quiet>This panel couldn&apos;t load ({result.error}). It retries on the next update.</Quiet>;
   return <>{children(result.data)}</>;
 }
