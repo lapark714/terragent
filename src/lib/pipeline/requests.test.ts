@@ -78,7 +78,7 @@ describe("inbound lane", () => {
   it("lets a customer's reply go back to Comms 2 while the request is still being clarified", async () => {
     const req = await startInboundRequest({ question: "Can you check my place?", source: "email" });
     await recordScreening(req.id, { allowed: false, category: "unclear_needs_clarification", reason: "No location" }, "comms-customer");
-    expect((await getRequest(req.id))?.status).toBe("clarifying");
+    expect((await getRequest(req.id))?.status).toBe("screening"); // clarifying only once the question is really sent
     await handoff({ requestId: req.id, from: "system", to: "comms-customer", stage: "customer_reply", instructions: "The customer replied" });
     await expect(handoff({ requestId: req.id, from: "comms-customer", to: "planner", stage: "planning", instructions: "Plan" })).rejects.toThrow(/screening/);
   });

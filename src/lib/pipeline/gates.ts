@@ -19,6 +19,13 @@ export const WAITING_ORDER_STATUSES = ["awaiting_approval", "approved", "placed"
 
 export const needsQuote = (req: Pick<GatedRequest, "source" | "is_free_sample">) => !req.is_free_sample && req.source !== "monitor";
 
+/** The option the customer accepted buys data (a pre-v2 quote has no options, so its plan decides). */
+export function acceptedOptionBuysData(quote: { accepted_option_id: string | null; options: unknown }, planChoice: string | null | undefined): boolean {
+  const options = Array.isArray(quote.options) ? (quote.options as { option_id: string; kind: string }[]) : [];
+  if (!options.length) return planChoice === "paid";
+  return options.find((o) => o.option_id === quote.accepted_option_id)?.kind !== "free_data";
+}
+
 /** Cleared = the customer accepted an option (a pre-v2 quote accepted in the thread counts too). */
 export const isPriceCleared = (q: QuoteState) => q.status === "accepted";
 

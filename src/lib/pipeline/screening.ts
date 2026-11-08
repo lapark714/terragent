@@ -22,8 +22,9 @@ export async function recordScreening(requestId: string, input: ScreeningResult,
     return { outcome, decision_id, next: "Send the customer a short refusal with send_customer_message kind refusal. Do not hand off." };
   }
   if (outcome === "clarify") {
-    await setStatus(requestId, "clarifying", actor, "Waiting on the customer");
-    return { outcome, decision_id, next: "Ask one clarifying question with send_customer_message kind clarifying_question." };
+    // Not parked yet: send_customer_message sets clarifying once the question has really gone out, so a dropped send
+    // is stuck work for the coordinator (clarifying_not_sent), not a customer "waiting" on a question nobody asked.
+    return { outcome, decision_id, next: "Ask one clarifying question with send_customer_message kind clarifying_question; sending it parks the request as clarifying." };
   }
   return { outcome, decision_id, next: "Hand off to planner with stage planning." };
 }

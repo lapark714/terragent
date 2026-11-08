@@ -78,6 +78,18 @@ describe("PRICING v2 prompts", () => {
     expect(c).toMatch(/never start work on a quote nobody accepted/);
   });
 
+  it("coordinator: a dropped handoff follows the stuck list's hint, and paid data always goes through acquisition", () => {
+    const c = system("coordinator");
+    for (const reason of ["quote_not_sent", "clarifying_not_sent", "accepted_not_started", "data_delivered_not_started"]) expect(c).toContain(reason);
+    expect(c).toMatch(/do exactly what that request's hint says, once/);
+    expect(c).toMatch(/never approve, prepare or buy an order/);
+    expect(c).toMatch(/stays waiting, on a digest too/);
+  });
+
+  it("acquisition: can prepare the orders of an accepted option when the acceptance never held them", () => {
+    expect(system("acquisition")).toMatch(/no order was held[\s\S]*terragent\.prepare_paid_order/);
+  });
+
   it.each(["acquisition", "pricing", "comms-customer", "coordinator"] as const)("%s: never writes a person's name or email into a brief", (a) => {
     expect(system(a)).toMatch(/name, email address or phone number/);
   });

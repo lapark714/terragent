@@ -31,7 +31,8 @@ export const acquisition: AgentDefinition = {
         "existing_index. Otherwise → terragent.handoff to pricing (stage pricing): which sources " +
         "you compared and which one answers the question; pricing turns the plan into the quote's options.",
       "Later runs: a brief saying the customer accepted a paid option and asking you to: terragent.get_order for each held order, then terragent.place_paid_order " +
-        "(it pauses for a founder; a founder buys by hand), then terragent.add_note with the order ids and stop. The analysis starts by itself when a " +
+        "(it pauses for a founder; a founder buys by hand), then terragent.add_note with the order ids and stop. If the brief says no order was held for the accepted option, " +
+        "terragent.prepare_paid_order for each paid data item of that option first. The analysis starts by itself when a " +
         "founder marks the data delivered on the dashboard; only if a brief says the paid data arrived but the analysis did not start, " +
         "terragent.handoff to analytics (stage analysis) with the order ids.",
     ],
