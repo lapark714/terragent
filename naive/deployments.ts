@@ -67,8 +67,8 @@ export const DEPLOYMENTS: readonly DeploymentSpec[] = [
     window: AGENT_BUDGETS.analytics.window,
     prompt:
       "Check due monitors [tg:analytics-monitors]\n" +
-      "Call terragent.list_due_monitors. For each due monitor re-run the analysis on the newest clear scene and record it " +
-      "with terragent.record_monitor_check. Stop when none are left.",
+      "Call terragent.list_due_monitors. For each due monitor call terragent.run_analysis({ request_id, monitor_id }): it re-runs " +
+      "the analysis on the newest clear scene and records the re-check on the monitor itself. Stop when none are left.",
   },
   {
     key: "outreach-followups",
