@@ -39,6 +39,25 @@ _This table is refreshed after platform research; see docs/platform/README.md fo
 
 ## Decisions
 
+- **2026-11-08 — Founder decisions delegated to the build agent (Laurence: "just make whatever decision you wish").**
+  1. **Foreign "shop" team paused, not deleted.** The Naïve org held a starter-template company created 19:41 UTC on Nov 7
+     (CEO, store-manager, merchandiser, marketer, analyst; ~$81/day in caps; the marketer's job publishes a product post).
+     It isn't Terragent and would draw on the same $250, so its 4 deployments are **paused** (`dep_5hcm…`, `dep_8ra3…`,
+     `dep_hd46…`, `dep_mt0b…`; resume with `naive deploy resume <id>`). Agents left in place. It had spent $0.
+  2. **Contact-form outreach runs without per-action approval** (`OUTREACH_CONTACT_FORM_APPROVED=true`). Per-click
+     approval would park every form fill (several actions each) and turn into dozens of interventions a day, defeating the
+     autonomy goal (spec §11: < 10 interventions). The human checkpoint is **template approval** (spec §10.4). Guardrails
+     still on: one touch per business, never solve CAPTCHAs (`solve_captchas:false`, `stealth:false`), skip
+     "no solicitations" forms, AI disclosure + opt-out in every message, every touch logged and shown on the dashboard.
+     Residual risk, stated plainly: browser actions aren't enforced by our server, so form content relies on the agent
+     using the approved template text from `get_outreach_context`; the touch log is the audit.
+  3. **Outreach templates: the build agent reviews the seeded drafts against spec §8 and approves them** after deploy,
+     recorded as `approved_by: build-agent (delegated by Laurence)`.
+  4. **Postal address NOT invented.** CAN-SPAM requires a real address where the company receives mail; a made-up one would
+     break the law rather than satisfy it. Email outreach stays blocked (`missing_postal_address`) until a founder sets
+     `COMPANY_POSTAL_ADDRESS` (a founder's business address or a virtual mailbox both work). The default cold channel
+     (contact forms) does not depend on it.
+
 - **2026-11-07 — First public deploy needs Laurence's final thumbs-up.** Laurence approved "deploy when green", then asked (via the key-setup session) to be told when a deploy is staged so they can give a final OK. So: build → tests green → stage (push + Vercel project + env loaded) → show what will go live and how to roll back → deploy only on Laurence's explicit yes.
 
 - **2026-11-07 — Outbound channel (AgentMail forbids cold outreach).** We do NOT evade AgentMail's enforcement (no inbox rotation, no disguising cold mail as replies): a suspension is org-wide and would stop hello@ delivering customer reports. Instead the sourcing agent's outreach has three channels, chosen per prospect:
