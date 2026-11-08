@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { BBox } from "../domain";
-import { covers, isHazy, minClear, pickBest, previewUrl, searchFreeScenes, stacInterval, toCandidates, type SceneCandidate } from "./stac";
+import { coverage, covers, isHazy, minClear, pickBest, previewUrl, searchFreeScenes, stacInterval, toCandidates, type SceneCandidate } from "./stac";
 
 const LA: BBox = [-118.2608, 34.041, -118.2392, 34.059];
 const TILE_BOX: BBox = [-119, 33.5, -117.5, 34.6];
@@ -109,6 +109,49 @@ describe("previewUrl", () => {
   });
 });
 
+describe("a satellite pass across a tile edge", () => {
+  const AOI: BBox = [-118.26, 34.04, -118.24, 34.06]; // straddles lat 34.05
+  const SOUTH: BBox = [-119, 33, -117.5, 34.05];
+  const NORTH: BBox = [-119, 34.05, -117.5, 35];
+  const WHEN = "2026-10-24T18:34:31Z";
+
+  it("coverage is the share of the AOI inside the union of the footprints", () => {
+    const [s, n] = [item("s", WHEN, { box: SOUTH }), item("n", WHEN, { box: NORTH })];
+    expect(coverage([s.geometry], AOI)).toBeCloseTo(0.5, 1);
+    expect(coverage([s.geometry, n.geometry], AOI)).toBe(1);
+    expect(coverage([null], AOI)).toBe(0);
+  });
+
+  it("counts a pass whose tiles together cover the AOI, and names the tiles to stitch", () => {
+    const out = toCandidates([item("s", WHEN, { box: SOUTH, tile: "10SFH" }), item("n", WHEN, { box: NORTH, tile: "10SFJ" })], "sentinel-2-l2a", AOI);
+    expect(out).toHaveLength(1);
+    expect(out[0]).toMatchObject({ covers_aoi: true, aoi_coverage_fraction: 1 });
+    expect([...out[0].stitched_tiles!].sort()).toEqual(["10SFH", "10SFJ"]);
+    expect(out[0].stitched_tiles![0]).toBe(out[0].mgrs_tile); // the first is the kept item's tile
+  });
+
+  it("drops a half-covered pass when another pass covers the AOI, and lists no tiles for a whole tile", () => {
+    const out = toCandidates([item("half", "2026-10-29T18:34:31Z", { box: SOUTH }), item("whole", WHEN, { box: [-119, 33, -117.5, 35] })], "sentinel-2-l2a", AOI);
+    expect(out.map((c) => c.item_id)).toEqual(["whole"]);
+    expect(out[0].stitched_tiles).toBeUndefined();
+  });
+
+  it("keeps partial passes when none covers, with their real coverage", () => {
+    const [c] = toCandidates([item("half", WHEN, { box: SOUTH })], "sentinel-2-l2a", AOI);
+    expect(c.covers_aoi).toBe(false);
+    expect(c.aoi_coverage_fraction).toBeCloseTo(0.5, 1);
+  });
+
+  it("does not merge tiles from different days or orbits", () => {
+    const other = item("n", "2026-10-25T18:34:31Z", { box: NORTH });
+    expect(toCandidates([item("s", WHEN, { box: SOUTH }), other], "sentinel-2-l2a", AOI)).toHaveLength(2);
+    const orbit = (it: ReturnType<typeof item>, o: number) => ({ ...it, properties: { ...it.properties, "sat:relative_orbit": o } });
+    const crossed = toCandidates([orbit(item("s", WHEN, { box: SOUTH }), 27), orbit(item("n", WHEN, { box: NORTH }), 70)], "sentinel-2-l2a", AOI);
+    expect(crossed).toHaveLength(2);
+    expect(crossed[0].covers_aoi).toBe(false);
+  });
+});
+
 describe("searchFreeScenes", () => {
   afterEach(() => vi.unstubAllGlobals());
 
@@ -141,6 +184,62 @@ describe("searchFreeScenes", () => {
     );
     return calls;
   }
+
+  describe("AOI coverage", () => {
+    const AOI: BBox = [-118.26, 34.04, -118.24, 34.06];
+    const SOUTH: BBox = [-119, 33, -117.5, 34.05];
+    const NORTH: BBox = [-119, 34.05, -117.5, 35];
+    const q = { bbox: AOI, after: { start: "2026-09-01", end: "2026-11-07" }, before: null, maxCloudPct: 20 };
+    const WHEN = "2026-10-24T18:34:31Z";
+
+    it("a part the pass doesn't reach counts as not clear, and the note says so", async () => {
+      stubPc({ "2026-09-01": [item("half", WHEN, { box: SOUTH })] }, { half: [0.99, 0.1] });
+      const res = await searchFreeScenes(q);
+      expect(res.after?.aoi_clear_fraction).toBeCloseTo(0.5, 1); // the statistics alone would say 99% clear
+      expect(res.notes.join(" ")).toMatch(/covers only 50% of the AOI/);
+    });
+
+    it("a pass stitched from two tiles reads as clear, and the note names the tiles", async () => {
+      stubPc({ "2026-09-01": [item("s", WHEN, { box: SOUTH, tile: "10SFH" }), item("n", WHEN, { box: NORTH, tile: "10SFJ" })] }, { s: [0.99, 0.1], n: [0.99, 0.1] });
+      const res = await searchFreeScenes(q);
+      expect(res.after?.aoi_clear_fraction).toBe(0.99);
+      expect(res.notes.join(" ")).toMatch(/stitches 10SF[HJ] \+ 10SF[HJ]/);
+      expect(res.notes.join(" ")).not.toMatch(/covers only/);
+    });
+
+    it("measures every tile of a stitched pass, so an overcast neighbour is not missed", async () => {
+      const seen: string[] = [];
+      stubPc(
+        { "2026-09-01": [item("s", WHEN, { box: SOUTH, tile: "10SFH" }), item("n", WHEN, { box: NORTH, tile: "10SFJ" })] },
+        { s: [0.99, 0.1], n: [0.2, 0.3] },
+        (id) => seen.push(id),
+      );
+      const res = await searchFreeScenes(q);
+      expect([...seen].sort()).toEqual(["n", "s"]);
+      expect(res.after?.aoi_clear_fraction).toBeCloseTo(0.595, 2); // 0.99 and 0.2 at half the AOI each
+    });
+
+    it("leaves a stitched pass unmeasured if one tile can't be measured", async () => {
+      stubPc({ "2026-09-01": [item("s", WHEN, { box: SOUTH, tile: "10SFH" }), item("n", WHEN, { box: NORTH, tile: "10SFJ" })] }, { s: [0.99, 0.1], n: null });
+      const res = await searchFreeScenes(q);
+      expect(res.after?.aoi_clear_fraction).toBeNull();
+      expect(res.notes.join(" ")).toMatch(/not measured/);
+    });
+
+    it("does not pin the before scene to the after tile across a tile edge", async () => {
+      const whole: BBox = [-119, 33, -117.5, 35];
+      const before = { start: "2025-09-01", end: "2025-11-07" };
+      stubPc(
+        {
+          "2026-09-01": [item("s", WHEN, { box: SOUTH, tile: "10SFH" }), item("n", WHEN, { box: NORTH, tile: "10SFJ" })],
+          "2025-09-01": [item("other", "2025-10-20T18:34:31Z", { box: whole, tile: "11SLT" })],
+        },
+        { s: [0.99, 0.1], n: [0.99, 0.1], other: [0.99, 0.1] },
+      );
+      const res = await searchFreeScenes({ ...q, before });
+      expect(res.before?.item_id).toBe("other");
+    });
+  });
 
   const query = {
     bbox: LA,

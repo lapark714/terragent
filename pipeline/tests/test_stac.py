@@ -47,7 +47,7 @@ def test_tile_helpers():
 def test_search_posts_the_stac_body(monkeypatch):
     sent = {}
 
-    def fake(url, body=None, tries=3):
+    def fake(url, body=None, tries=3, timeout=20.0):
         sent.update(url=url, body=body)
         return {"features": [make_item()]}
 
@@ -107,3 +107,64 @@ def test_http_retries_then_raises(monkeypatch):
     with pytest.raises(urllib.error.HTTPError):
         stac.get_item("sentinel-2-l2a", "x")
     assert len(attempts) == 3
+
+
+# --- A pass across a tile edge: the AOI straddles lat 34.05 between two tiles of one pass ---
+AOI = (-118.26, 34.04, -118.24, 34.06)
+SOUTH = (-119.0, 33.0, -117.5, 34.05)
+NORTH = (-119.0, 34.05, -117.5, 35.0)
+
+
+def tile_item(tile, bbox, when="2026-10-24T18:34:31Z", orbit=27, generation="2026-10-24T21:48:12Z", platform="Sentinel-2C"):
+    it = make_item(item_id=f"S2_{tile}_{when[:10]}_{orbit}_{generation[:13]}", when=when, tile=tile, bbox=bbox, generation=generation)
+    it["properties"]["sat:relative_orbit"] = orbit
+    it["properties"]["platform"] = platform
+    return it
+
+
+def test_coverage_is_the_union_of_the_footprints():
+    assert stac.coverage([tile_item("S", SOUTH)["geometry"]], AOI) == pytest.approx(0.5, abs=0.05)
+    assert stac.coverage([tile_item("S", SOUTH)["geometry"], tile_item("N", NORTH)["geometry"]], AOI) == 1.0
+    assert stac.coverage([None], AOI) == 0.0
+
+
+def test_candidates_counts_a_pass_whose_tiles_together_cover_the_aoi():
+    old_full = tile_item("W", (-119.0, 33.0, -117.5, 35.0), when="2026-10-14T18:34:31Z", orbit=27)
+    stitched = [tile_item("S", SOUTH), tile_item("N", NORTH)]
+    partial_newer = tile_item("S", SOUTH, when="2026-10-29T18:34:31Z", orbit=27)
+    out = stac.candidates([partial_newer, *stitched, old_full], AOI)
+    assert [i["properties"]["datetime"][:10] for i in out] == ["2026-10-24", "2026-10-14"]  # the half-covered pass is dropped
+
+
+def test_candidates_keeps_partial_passes_when_none_covers():
+    out = stac.candidates([tile_item("S", SOUTH), tile_item("N", NORTH, when="2026-10-14T18:34:31Z")], AOI)
+    assert len(out) == 2
+
+
+def test_candidates_keeps_the_tile_with_the_largest_share():
+    small = tile_item("SMALL", (-119.0, 33.0, -117.5, 34.043))
+    large = tile_item("LARGE", (-119.0, 33.0, -117.5, 34.055))
+    assert stac.candidates([small, large], AOI)[0]["properties"]["s2:mgrs_tile"] == "LARGE"
+
+
+def test_same_pass_makes_no_search_when_the_item_covers_the_aoi(monkeypatch):
+    monkeypatch.setattr(stac, "search", lambda *a, **k: pytest.fail("searched"))
+    assert stac.same_pass(tile_item("W", (-119.0, 33.0, -117.5, 35.0)), "sentinel-2-l2a", AOI) == []
+
+
+def test_same_pass_returns_only_other_tiles_of_that_pass_newest_processing_first(monkeypatch):
+    main = tile_item("S", SOUTH)
+    north_old = tile_item("N", NORTH, generation="2026-10-24T21:00:00Z")
+    north_new = tile_item("N", NORTH, generation="2026-10-25T09:00:00Z")
+    other_orbit = tile_item("E", NORTH, orbit=70)
+    other_sat = tile_item("F", NORTH, platform="Sentinel-2A")
+    seen = {}
+
+    def search(collection, bbox, window, query=None, limit=50, oldest_first=False, tries=3, timeout=20.0):
+        seen.update(collection=collection, window=window.stac(), tries=tries, timeout=timeout)
+        return [main, north_old, north_new, other_orbit, other_sat]
+
+    monkeypatch.setattr(stac, "search", search)
+    assert [i["id"] for i in stac.same_pass(main, "sentinel-2-l2a", AOI)] == [north_new["id"]]
+    assert seen == {"collection": "sentinel-2-l2a", "window": "2026-10-24T00:00:00Z/2026-10-24T23:59:59Z", "tries": 1, "timeout": 8.0}
+

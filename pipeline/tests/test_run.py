@@ -47,7 +47,7 @@ def offline(monkeypatch):
         return Pick(scenes[label].item, SENTINEL2, 1.0), []
 
     monkeypatch.setattr(analysis, "find_scene", find_scene)
-    monkeypatch.setattr(analysis, "load_scene", lambda item, sensor, grid, bands: next(
+    monkeypatch.setattr(analysis, "load_pass", lambda item, sensor, grid, bands, bbox: next(
         s for s in scenes.values() if s.item is item))
     return seen
 
@@ -118,7 +118,7 @@ def test_deadline_returns_an_empty_result_with_a_warning_and_exits_0(job_file, m
 
 def test_deadline_names_scenes_already_chosen(job_file, offline, monkeypatch, tmp_path, capsys, stuck):
     release, _ = stuck
-    monkeypatch.setattr(analysis, "load_scene", lambda *a, **k: release.wait(30))
+    monkeypatch.setattr(analysis, "load_pass", lambda *a, **k: release.wait(30))
     assert run.main(["--job", job_file(), "--out", str(tmp_path / "o"), "--deadline-s", "0.3"]) == 0
     warning = json.loads(capsys.readouterr().out)["warnings"][-1]
     assert "during the 'read' step" in warning
@@ -145,3 +145,29 @@ def test_deadline_from_flag_env_or_default(monkeypatch):
     assert run.deadline_seconds(10) == 10
     monkeypatch.setenv(run.DEADLINE_ENV, "soon")
     assert run.deadline_seconds() == 75
+
+
+def test_coverage_warnings_name_stitched_tiles_and_missing_data():
+    from conftest import SHAPE, make_item, refl
+    from terragent_pipeline.analysis import _coverage_warnings
+    from terragent_pipeline.scenes import Pick, Scene
+    from terragent_pipeline.sensors import SENTINEL2
+
+    class J:
+        max_cloud_pct = 20
+
+    whole = Scene(make_item(), SENTINEL2, refl(), np.ones(SHAPE, bool), tiles=["10SFJ", "10SFH"])
+    r = refl()
+    r["red"][: SHAPE[0] // 3] = np.nan
+    gappy = Scene(make_item(when="2021-09-26T18:34:31Z"), SENTINEL2, r, np.ones(SHAPE, bool))
+    out = _coverage_warnings(J, (Pick(whole.item, SENTINEL2, 1.0), whole), (Pick(gappy.item, SENTINEL2, 1.0), gappy))
+    assert any("combines 2" in w and "10SFJ, 10SFH" in w for w in out)
+    assert any("33% of the area has no data in the before scene (2021-09-26)" in w for w in out)
+    assert not any("no data in the after scene" in w for w in out)
+    assert any("outside that satellite pass" in w for w in out)
+
+    gappy.fill_failed = True
+    retry = _coverage_warnings(J, (Pick(whole.item, SENTINEL2, 1.0), whole), (Pick(gappy.item, SENTINEL2, 1.0), gappy))
+    assert any("could not be read" in w and "retry" in w.lower() for w in retry)
+    assert not any("outside that satellite pass" in w for w in retry)
+

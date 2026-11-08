@@ -160,3 +160,129 @@ def test_find_scene_earliest_keeps_the_tile_pin_and_order(fake_catalog):
     first, _ = scenes.find_scene("after", LA_BBOX, WINDOW, 20, SENTINEL2, pin=make_item(tile="11SLT"), earliest=True)
     assert first and first.item["id"] == "D19"
     assert fake_catalog["queries"][0][1]["s2:mgrs_tile"] == {"eq": "11SLT"} and fake_catalog["oldest_first"] == [True]
+
+
+# --- Stitching the tiles of one pass ---
+BANDS = ("blue", "green", "red", "nir")
+
+
+def tile_with_assets(tile, baseline="05.13", when="2026-10-24T18:34:31Z"):
+    item = make_item(item_id=f"S2_{tile}", tile=tile, baseline=baseline, when=when)
+    item["assets"] = {k: {"href": f"https://x.blob.core.windows.net/c/{tile}/{k}"} for k in ("B02", "B03", "B04", "B08", "SCL")}
+    return item
+
+
+@pytest.fixture
+def two_tiles(monkeypatch):
+    """Tile A has data in the top half only and tile B in the bottom three quarters (rows overlap in the middle).
+    B has a pre-offset baseline, so the same DN gives a different reflectance. Row 0 of B's data is cloud."""
+    from conftest import LA_GRID
+
+    h = LA_GRID.height
+
+    def read(href, grid, resampling=None):
+        _, tile, key = href.rsplit("/", 2)
+        rows = np.arange(grid.shape[0]) * h // grid.shape[0]
+        valid = (rows < h // 2) if tile == "A" else (rows >= h // 4)
+        out = np.zeros(grid.shape, np.uint16 if key != "SCL" else np.uint8)
+        out[valid] = 4 if key == "SCL" else 2000
+        if tile == "B" and key == "SCL":
+            out[rows == h // 2 + 1] = 9  # a cloud row only B can see
+        return out
+
+    monkeypatch.setattr(scenes, "read_on_grid", read)
+    monkeypatch.setattr(scenes.stac, "sign", lambda href, c: href)
+    return LA_GRID, tile_with_assets("A"), tile_with_assets("B", baseline="02.12")
+
+
+def test_load_pass_fills_gaps_from_the_other_tile(monkeypatch, two_tiles):
+    grid, a, b = two_tiles
+    monkeypatch.setattr(scenes.stac, "same_pass", lambda item, collection, bbox: [b])
+    sc = scenes.load_pass(a, SENTINEL2, grid, BANDS, (0, 0, 1, 1))
+    h = grid.height
+    assert sc.data_fraction == 1.0
+    assert sc.refl["red"][h // 4, 5] == pytest.approx(0.1)  # overlap row: tile A wins, with its own offset
+    assert sc.refl["red"][h - 1, 5] == pytest.approx(0.2)  # filled from B, with B's scaling
+    assert not sc.clear[h // 2 + 1].any() and sc.clear[h // 2 + 2:].all()  # B's cloud row stays cloud
+    assert sc.tiles == ["A", "B"]
+    assert sc.item["id"] == "S2_A"
+
+
+def test_load_pass_leaves_a_complete_tile_alone(monkeypatch):
+    from conftest import LA_GRID
+
+    monkeypatch.setattr(scenes, "read_on_grid", lambda href, grid, resampling=None: np.full(grid.shape, 2000 if not href.endswith("SCL") else 4, np.uint16))
+    monkeypatch.setattr(scenes.stac, "sign", lambda href, c: href)
+    monkeypatch.setattr(scenes.stac, "same_pass", lambda *a: pytest.fail("looked for other tiles"))
+    sc = scenes.load_pass(tile_with_assets("A"), SENTINEL2, LA_GRID, BANDS, (0, 0, 1, 1))
+    assert sc.tiles == [] and sc.data_fraction == 1.0
+
+
+def test_load_pass_survives_a_failed_tile_lookup(monkeypatch, two_tiles):
+    grid, a, _ = two_tiles
+
+    def boom(*a):
+        raise TimeoutError("STAC down")
+
+    monkeypatch.setattr(scenes.stac, "same_pass", boom)
+    sc = scenes.load_pass(a, SENTINEL2, grid, BANDS, (0, 0, 1, 1))
+    assert sc.tiles == [] and sc.fill_failed and sc.data_fraction == pytest.approx(0.5, abs=0.01)
+
+
+def test_screen_measures_the_whole_pass(monkeypatch, two_tiles):
+    grid, a, b = two_tiles
+    monkeypatch.setattr(scenes.stac, "same_pass", lambda item, collection, bbox: [b])
+    monkeypatch.setattr(scenes, "grid_for_bbox", lambda bbox, epsg, res: grid)
+    with_b = scenes.screen(a, SENTINEL2, (0, 0, 1, 1))
+    monkeypatch.setattr(scenes.stac, "same_pass", lambda item, collection, bbox: [])
+    alone = scenes.screen(a, SENTINEL2, (0, 0, 1, 1))
+    assert alone.clear == pytest.approx(0.5, abs=0.01)
+    assert with_b.clear > 0.95
+
+
+def _fail_tile_reads(monkeypatch, tile):
+    from rasterio.errors import RasterioIOError
+
+    real = scenes.read_on_grid
+
+    def read(href, grid, resampling=None):
+        if f"/{tile}/" in href:
+            raise RasterioIOError("503 from blob storage")
+        return real(href, grid, resampling)
+
+    monkeypatch.setattr(scenes, "read_on_grid", read)
+
+
+def test_load_pass_keeps_going_when_a_neighbouring_tile_cannot_be_read(monkeypatch, two_tiles):
+    grid, a, b = two_tiles
+    monkeypatch.setattr(scenes.stac, "same_pass", lambda item, collection, bbox: [b])
+    _fail_tile_reads(monkeypatch, "B")
+    sc = scenes.load_pass(a, SENTINEL2, grid, BANDS, (0, 0, 1, 1))
+    assert sc.fill_failed and sc.tiles == [] and sc.data_fraction == pytest.approx(0.5, abs=0.01)
+
+
+def test_a_failed_read_of_the_main_tile_still_raises(monkeypatch, two_tiles):
+    from rasterio.errors import RasterioIOError
+
+    grid, a, b = two_tiles
+    monkeypatch.setattr(scenes.stac, "same_pass", lambda item, collection, bbox: [b])
+    _fail_tile_reads(monkeypatch, "A")
+    with pytest.raises(RasterioIOError):
+        scenes.load_pass(a, SENTINEL2, grid, BANDS, (0, 0, 1, 1))
+
+
+def test_screen_keeps_going_when_a_neighbouring_tile_cannot_be_read(monkeypatch, two_tiles):
+    grid, a, b = two_tiles
+    monkeypatch.setattr(scenes.stac, "same_pass", lambda item, collection, bbox: [b])
+    monkeypatch.setattr(scenes, "grid_for_bbox", lambda bbox, epsg, res: grid)
+    _fail_tile_reads(monkeypatch, "B")
+    assert scenes.screen(a, SENTINEL2, (0, 0, 1, 1)).clear == pytest.approx(0.5, abs=0.01)
+
+
+def test_no_tile_pin_across_a_tile_edge(fake_catalog):
+    edge = make_item(item_id="after_edge", bbox=(-119.0, 33.5, -117.5, LA_BBOX[1] + 0.005))
+    fake_catalog["items"]["sentinel-2-l2a"] = [make_item(item_id="b1", when="2026-09-20T18:34:31Z", tile="11SLT")]
+    edge_pick, _ = scenes.find_scene("before", LA_BBOX, Window("2026-09-01", "2026-09-30"), 20, SENTINEL2, pin={**edge, "collection": "sentinel-2-l2a"})
+    assert edge_pick.item["id"] == "b1"
+    assert all("s2:mgrs_tile" not in (q or {}) for _, q in fake_catalog["queries"])
+

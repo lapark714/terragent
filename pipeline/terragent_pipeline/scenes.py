@@ -2,10 +2,12 @@
 from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from http.client import HTTPException
 
 import numpy as np
 from rasterio.enums import Resampling
+from rasterio.errors import RasterioError
 
 from . import stac
 from .grid import Grid, grid_for_bbox
@@ -17,6 +19,8 @@ MAX_SCREEN = 4  # newest candidates screened (mask + blue band, in parallel; mor
 EXTRA_SCREEN = 4  # if none is clear enough: the least cloudy (by tile) of the rest
 TILE_CLOUD_CAP = 80  # tile eo:cloud_cover is per 110 km tile; only drop the hopeless ones before screening
 HAZE_ABS, HAZE_REL = 0.025, 1.2  # blue reflectance above the window's clearest scene by both margins = hazy
+# Filling from a neighbouring tile is optional: if it fails the job goes on with what it has and says what is missing.
+FILL_ERRORS = (OSError, ValueError, KeyError, RasterioError, HTTPException)
 
 
 @dataclass
@@ -32,6 +36,17 @@ class Scene:
     sensor: Sensor
     refl: dict[str, np.ndarray]  # common band name -> surface reflectance on the analysis grid
     clear: np.ndarray  # bool: clear sky by SCL / QA and data in every band read
+    tiles: list[str] = field(default_factory=list)  # set when load_pass stitched more than one tile
+    fill_failed: bool = False  # a neighbouring tile could not be looked up or read, so gaps may be fillable on a retry
+
+    @property
+    def has_data(self) -> np.ndarray:
+        """Bool: the pixel has data in every band read (whatever the sky was)."""
+        return np.logical_and.reduce([np.isfinite(r) for r in self.refl.values()])
+
+    @property
+    def data_fraction(self) -> float:
+        return float(self.has_data.mean())
 
     @property
     def date(self) -> str:
@@ -93,14 +108,38 @@ def pick(screened: list[Screened], need: float) -> Screened | None:
     return max(screened, key=lambda s: s.clear) if screened else None
 
 
-def screen(item: dict, sensor: Sensor, bbox: stac.BBox) -> Screened:
-    """Mask + blue band over the AOI at the mask's native 20/30 m: cheap enough to run on every candidate."""
-    grid = grid_for_bbox(bbox, epsg_of(item), sensor.base_res_m)
-    grid = grid.with_res(sensor.native_m[sensor.mask_asset])
+def _other_tiles(item: dict, sensor: Sensor, bbox: stac.BBox) -> list[dict] | None:
+    """Same-pass tiles to fill `item`'s gaps; None if the lookup failed."""
+    try:
+        return stac.same_pass(item, sensor.collection, bbox)
+    except FILL_ERRORS:
+        return None
+
+
+def _screen_tile(item: dict, sensor: Sensor, grid: Grid) -> tuple[np.ndarray, np.ndarray]:
+    """(clear, blue reflectance) of one tile on the screening grid; blue is NaN where the tile has no data."""
     hrefs = {k: stac.sign(item["assets"][k]["href"], sensor.collection) for k in (sensor.mask_asset, sensor.bands["blue"])}
     mask = read_on_grid(hrefs[sensor.mask_asset], grid)
     blue = sensor.reflectance(item["properties"], read_on_grid(hrefs[sensor.bands["blue"]], grid, Resampling.average))
-    clear = sensor.clear(mask) & np.isfinite(blue)
+    return sensor.clear(mask) & np.isfinite(blue), blue
+
+
+def screen(item: dict, sensor: Sensor, bbox: stac.BBox) -> Screened:
+    """Mask + blue band over the AOI at the mask's native 20/30 m: cheap enough to run on every candidate. An AOI
+    across a tile edge is measured over the whole satellite pass, like the full read (load_pass)."""
+    grid = grid_for_bbox(bbox, epsg_of(item), sensor.base_res_m)
+    grid = grid.with_res(sensor.native_m[sensor.mask_asset])
+    clear, blue = _screen_tile(item, sensor, grid)
+    for other in _other_tiles(item, sensor, bbox) or []:
+        gaps = ~np.isfinite(blue)
+        if not gaps.any():
+            break
+        try:
+            other_clear, other_blue = _screen_tile(other, sensor, grid)
+        except FILL_ERRORS:
+            continue
+        fill = gaps & np.isfinite(other_blue)
+        clear[fill], blue[fill] = other_clear[fill], other_blue[fill]
     return Screened(item, float(clear.mean()), float(np.median(blue[clear])) if clear.any() else None)
 
 
@@ -127,7 +166,9 @@ def _search(
         cands = stac.candidates(stac.search(sensor.collection, bbox, window, q, oldest_first=earliest), bbox)
         return cands[::-1] if earliest else cands  # candidates() sorts newest first
 
-    if pin is not None and pin["collection"] == sensor.collection:
+    # Same tile before and after means one pixel grid. Not across a tile edge: a search limited to one tile can't see
+    # that a pass's tiles together cover the AOI, and it would prefer a newer pass that leaves part of it blank.
+    if pin is not None and pin["collection"] == sensor.collection and stac.covers(pin.get("geometry"), bbox):
         pinned = run({**query, **stac.tile_query(pin)})
         if pinned:
             return pinned
@@ -205,3 +246,31 @@ def load_scene(item: dict, sensor: Sensor, grid: Grid, bands: tuple[str, ...]) -
     refl = {b: sensor.reflectance(item["properties"], dn[sensor.bands[b]]) for b in bands}
     has_data = np.logical_and.reduce([np.isfinite(r) for r in refl.values()])
     return Scene(item, sensor, refl, sensor.clear(dn[sensor.mask_asset]) & has_data)
+
+
+def load_pass(item: dict, sensor: Sensor, grid: Grid, bands: tuple[str, ...], bbox: stac.BBox) -> Scene:
+    """load_scene, then fill the pixels `item` has no data for from the other tiles of the same satellite pass, so an
+    AOI across a tile edge is read whole. `item` wins where tiles overlap; each tile uses its own reflectance scaling."""
+    scene = load_scene(item, sensor, grid, bands)
+    has = scene.has_data
+    if has.all():
+        return scene
+    others = _other_tiles(item, sensor, bbox)
+    scene.fill_failed = others is None
+    for other in others or []:
+        if has.all():
+            break
+        try:
+            extra = load_scene(other, sensor, grid, bands)
+        except FILL_ERRORS:
+            scene.fill_failed = True
+            continue
+        fill = ~has & extra.has_data
+        if not fill.any():
+            continue
+        for band in bands:
+            scene.refl[band][fill] = extra.refl[band][fill]
+        scene.clear[fill] = extra.clear[fill]
+        has |= fill
+        scene.tiles = (scene.tiles or [stac.tile_of(item) or item["id"]]) + [stac.tile_of(other) or other["id"]]
+    return scene

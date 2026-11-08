@@ -16,8 +16,11 @@ from .grid import grid_for_bbox
 from .h3agg import h3_metrics
 from .job import Job
 from .recipes import RECIPE_SPECS, Ctx, Outcome, default_before
-from .scenes import Pick, Scene, find_scene, load_scene, min_clear
+from .scenes import Pick, Scene, find_scene, load_pass, min_clear
 from .sensors import SENSORS, epsg_of
+
+
+NO_DATA_WARN = 0.98  # below this share of the AOI with data, say so: a tile edge alone never costs this much
 
 
 class Timer:
@@ -96,8 +99,8 @@ def analyse(job: Job, out: Path, progress: Progress | None = None) -> dict:
 
     grid = grid_for_bbox(job.bbox, epsg_of(after_pick.item), after_pick.sensor.base_res_m)
     with timer("read"), ThreadPoolExecutor(2) as ex:
-        fa = ex.submit(load_scene, after_pick.item, after_pick.sensor, grid, spec.bands)
-        fb = ex.submit(load_scene, before_pick.item, before_pick.sensor, grid, spec.bands) if before_pick else None
+        fa = ex.submit(load_pass, after_pick.item, after_pick.sensor, grid, spec.bands, job.bbox)
+        fb = ex.submit(load_pass, before_pick.item, before_pick.sensor, grid, spec.bands, job.bbox) if before_pick else None
         after, before = fa.result(), fb.result() if fb else None
     log(f"read {grid.width}x{grid.height} px at {grid.res:g} m (EPSG:{grid.epsg})")
     warnings += _coverage_warnings(job, (after_pick, after), (before_pick, before))
@@ -136,6 +139,17 @@ def _coverage_warnings(job: Job, after: tuple[Pick, Scene], before: tuple[Pick |
     for label, (p, s) in (("after", after), ("before", before)):
         if p is not None and s is not None and p.screened_clear is None and s.clear_fraction < need:
             out.append(f"Only {100 * s.clear_fraction:.0f}% of the area is clear in the {label} scene ({s.date}).")
+        if s is None:
+            continue
+        if len(s.tiles) > 1:
+            out.append(f"The {label} scene ({s.date}) combines {len(s.tiles)} {s.sensor.name} tiles ({', '.join(s.tiles)}) from one satellite pass.")
+        if s.data_fraction < NO_DATA_WARN:
+            missing = f"{100 * (1 - s.data_fraction):.0f}% of the area has no data in the {label} scene ({s.date})"
+            out.append(
+                f"{missing}: a neighbouring tile could not be read, so that part is not measured. A retry may fill it."
+                if s.fill_failed
+                else f"{missing}: it is outside that satellite pass, so that part is not measured."
+            )
     after_scene, before_scene = after[1], before[1]
     if before_scene is not None:
         both = float((after_scene.clear & before_scene.clear).mean())
