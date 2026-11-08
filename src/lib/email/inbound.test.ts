@@ -182,9 +182,10 @@ describe("routing matrix", () => {
       source: "email", prospectId: "pro_1", company: "Acme Storage", playbook: "disasters", threadId: "thr-o", inbox: "outreach", priority: "inbound",
     }));
     expect(mocks.handoff).toHaveBeenCalledWith(expect.objectContaining({ requestId: out.requestId, to: "comms-customer", stage: "prospect_reply" }));
-    // The new request needs screening and has no spec: the brief says so, and names the sample to monitor.
-    expect(briefOf().instructions).toMatch(/record_screening \(allowed\) before any handoff/);
-    expect(briefOf().instructions).toContain("create_monitor on req_s1");
+    // The new request needs screening, and outreach only gathers prices: the brief says so and sells nothing.
+    expect(briefOf().instructions).toMatch(/record_screening \(allowed\) first/);
+    expect(briefOf().instructions).toMatch(/aren't taking orders yet/);
+    expect(briefOf().instructions).not.toMatch(/quote and sell/);
     expect(mocks.createRequest).toHaveBeenCalledWith(expect.objectContaining({ meta: { origin: "prospect_reply", sample_request_id: "req_s1" } }));
     const [p] = await db.query<{ status: string; warm: boolean }>("SELECT status, warm FROM prospects WHERE id = 'pro_1'");
     expect(p).toEqual({ status: "replied", warm: true });
