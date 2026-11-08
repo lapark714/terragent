@@ -71,11 +71,20 @@ VARS=(
   "OUTREACH_CONTACT_FORM_APPROVED|OUTREACH_CONTACT_FORM_APPROVED|config"
 )
 
+VC="npx --yes vercel@latest"
+SCOPE="${VERCEL_SCOPE:-lapark714s-projects}"
+
 if [ "$DRY_RUN" = 0 ]; then
-  npx --yes vercel@latest whoami >/dev/null 2>&1 || { echo "Run 'npx vercel login' first." >&2; exit 1; }
+  # `vercel whoami` exits 0 even when logged out, so check what it prints.
+  who="$($VC whoami 2>&1 || true)"
+  if printf '%s' "$who" | grep -qiE 'logged out|not logged|login'; then
+    echo "The Vercel CLI is not logged in. Run:  npx vercel login   then re-run this script." >&2
+    exit 1
+  fi
+  echo "Vercel CLI user: $(printf '%s' "$who" | grep -vE '^Vercel CLI|^>' | tail -n 1)  (scope: $SCOPE, project: $PROJECT)"
 fi
 
-set_count=0; skip_count=0
+set_count=0; skip_count=0; fail_count=0
 for spec in "${VARS[@]}"; do
   IFS='|' read -r name src kind <<<"$spec"
   val="$(env_get "$src")"
@@ -84,11 +93,23 @@ for spec in "${VARS[@]}"; do
   fi
   if [ "$DRY_RUN" = 1 ]; then
     echo "  would set  $name  ($kind, from $src)"
-  else
-    flag="--sensitive"; [ "$kind" = config ] && flag="--no-sensitive"
-    printf '%s' "$val" | npx --yes vercel@latest env add "$name" -e production,preview --force "$flag" -p "$PROJECT" --yes >/dev/null
-    echo "  set   $name  ($kind)"
+    set_count=$((set_count + 1)); continue
   fi
-  set_count=$((set_count + 1))
+  flag="--sensitive"; [ "$kind" = config ] && flag="--no-sensitive"
+  # Value goes over stdin; CLI output is kept (it never echoes the value) so failures are visible.
+  if out="$(printf '%s' "$val" | $VC env add "$name" -e production,preview --force "$flag" -p "$PROJECT" --scope "$SCOPE" --yes 2>&1)"; then
+    echo "  set   $name  ($kind)"; set_count=$((set_count + 1))
+  else
+    echo "  FAIL  $name: $(printf '%s' "$out" | tail -n 2 | tr '\n' ' ')" >&2; fail_count=$((fail_count + 1))
+  fi
 done
-echo "Done: $set_count set, $skip_count skipped (project: $PROJECT). Redeploy for changes to take effect."
+
+if [ "$DRY_RUN" = 1 ]; then
+  echo "Dry run: $set_count would be set, $skip_count skipped."; exit 0
+fi
+
+# Verify on Vercel: count the names that now exist in production (names only; no values requested).
+present="$($VC env ls production -p "$PROJECT" --scope "$SCOPE" 2>/dev/null | awk 'NR>1 {print $1}' | grep -E '^[A-Z_][A-Z0-9_]*$' | sort -u | wc -l | tr -d ' ')"
+echo "Done: $set_count set, $fail_count failed, $skip_count skipped. Vercel now lists $present production variables for $PROJECT."
+[ "$fail_count" = 0 ] || exit 1
+echo "Redeploy for changes to take effect."
