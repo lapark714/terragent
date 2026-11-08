@@ -166,6 +166,19 @@ describe("handoff result", () => {
 });
 
 describe("status changes", () => {
+  it("awaiting_approval needs a paid order waiting on a founder, whichever tool sets it", async () => {
+    const req = await quotedRequest();
+    const before = (await getRequest(req.id))?.status;
+    expect((await call("coordinator", "set_status", { request_id: req.id, status: "awaiting_approval" })).error).toMatch(/no paid order waiting/);
+    expect((await call("coordinator", "handoff", { request_id: req.id, to: "comms-outreach", stage: "outreach", instructions: "Held for a founder", status: "awaiting_approval" })).error).toMatch(/no paid order waiting/);
+    expect((await getRequest(req.id))?.status).toBe(before);
+    await (await getDb()).query(
+      "INSERT INTO orders (id, request_id, provider_id, product, est_cost_usd, status, justification, meta) VALUES ($1, $2, 'arlula-archive', 'archive', 10, 'awaiting_approval', 'roofs', '{}')",
+      [`ord_${req.id}`, req.id],
+    );
+    expect(await call("coordinator", "set_status", { request_id: req.id, status: "awaiting_approval" })).toMatchObject({ status: "awaiting_approval" });
+  });
+
   it("finishing statuses only come from their own tools or the coordinator", async () => {
     const req = await quotedRequest();
     expect((await call("planner", "set_status", { request_id: req.id, status: "delivered" })).error).toMatch(/deliver_report/);

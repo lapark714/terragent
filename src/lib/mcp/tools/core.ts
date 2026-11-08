@@ -2,6 +2,7 @@
 import { z } from "zod";
 import { AgentName, DecisionKind, RequestStatus } from "../../domain";
 import { logDecision } from "../../events";
+import { parkingRefusal } from "../../pipeline/preconditions";
 import { addNote, handoff, requireRequest, setStatus, STAGES } from "../../pipeline/requests";
 import { recordStatedWillingness } from "../../pipeline/revenue";
 import { getRequestViewForAgent } from "../../pipeline/view";
@@ -30,6 +31,10 @@ export function register(r: ToolRegistrar): void {
     if (allowed && !allowed.includes(ctx.agent)) {
       return { error: VIA_TOOL[a.status] ? `Only ${VIA_TOOL[a.status]} sets ${a.status}.` : `Only ${allowed.join(" or ")} can set ${a.status}; add a note and hand off to coordinator.` };
     }
+    if (a.status === "awaiting_approval") {
+      const refused = await parkingRefusal(a.request_id);
+      if (refused) return { error: refused };
+    }
     await setStatus(a.request_id, a.status, ctx.agent, a.note);
     return { request_id: a.request_id, status: a.status };
   });
@@ -47,6 +52,10 @@ export function register(r: ToolRegistrar): void {
       ),
     },
     async (a, ctx) => {
+      if (a.status === "awaiting_approval") {
+        const refused = await parkingRefusal(a.request_id);
+        if (refused) return { error: refused };
+      }
       const lane = await handoff({
         requestId: a.request_id, from: ctx.agent, to: a.to, stage: a.stage, instructions: a.instructions, status: a.status, quoteAccepted: a.quote_accepted,
       });

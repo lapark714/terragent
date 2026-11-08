@@ -1,13 +1,13 @@
 import { CAPS } from "../../src/lib/config";
 import { systemPrompt } from "./prompt";
-import { allow, DATA, SKILL_READER, WEB } from "./tools";
+import { DATA, MEMBER, SKILL_READER, WEB } from "./tools";
 import type { AgentDefinition } from "./types";
 
 export const sourcing: AgentDefinition = {
   name: "sourcing",
   description: "Signal engine (cron): polls playbook feeds, matches affected businesses, scores them and sends the best into the pipeline as free samples.",
   skills: ["disasters", "deforestation", "mining"],
-  builtins: { ...SKILL_READER, ...WEB, ...DATA, board_read: allow(), session_spend: allow() },
+  builtins: { ...MEMBER, ...SKILL_READER, ...WEB, ...DATA },
   system: systemPrompt({
     role: "sourcing agent (the signal engine)",
     mission:
@@ -25,7 +25,10 @@ export const sourcing: AgentDefinition = {
         "data_search / data_describe / data_run (companies, real_estate, news, trade, jobs), web_search, terragent.monid_discover and terragent.monid_run (allowlisted, capped), terragent.geocode for addresses.",
       "terragent.create_prospect for each match: the business, its asset and location, a WORK contact if one is public, scores for fit, urgency, ability to pay and reachability (0–1), and the rationale. " +
         "terragent.update_signal matched.",
-      `terragent.get_allocation, then request free samples for the highest-scoring prospects: at most ${CAPS.freeSamplesPerRun} × this playbook's weight per run (round up, at least 1 when any prospect scores well). ` +
+      "Before spending on a sample, check the business can be reached: look on its own website (web_search, web_fetch) for a business contact form (general enquiries, sales, partnerships, sustainability). " +
+        "A consumer complaint or support form (one asking for national ID numbers or order details), a form behind a login, or a site that says no solicitations does not count. " +
+        "No usable form and no public work email: don't request a sample, leave the prospect matched and name it in your decision log. Pass any form you find to create_prospect as contact_form_url.",
+      `terragent.get_allocation, then request free samples for the highest-scoring reachable prospects: at most ${CAPS.freeSamplesPerRun} × this playbook's weight per run (round up, at least 1 when any prospect scores well). ` +
         `Samples are also capped per UTC day: ${CAPS.freeSamplesPerDay} × this playbook's weight (rounded up) and ${CAPS.freeSamplesPerDay} across all playbooks; get_allocation's free_samples shows the room left. ` +
         "terragent.request_free_sample sends each into the pipeline; when a cap is reached it returns an error that says which one. Then stop requesting, " +
         "leave the remaining prospects matched for a later run, and name them in your decision log.",

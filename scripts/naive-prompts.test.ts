@@ -13,6 +13,15 @@ const granted = (a: AgentName) =>
 const named = (text: string) => [...new Set([...text.matchAll(/\b(?:terragent|skywatch)\.[a-z_]+/g)].map((m) => m[0]))];
 const priceSection = (content: string) => content.slice(content.indexOf("## Price"));
 
+describe("sourcing", () => {
+  it("checks a business can be reached before spending on a free sample", () => {
+    const prompt = system("sourcing");
+    expect(prompt.indexOf("check the business can be reached")).toBeGreaterThan(-1);
+    expect(prompt.indexOf("check the business can be reached")).toBeLessThan(prompt.indexOf("request free samples"));
+    expect(prompt).toMatch(/consumer complaint or support form[^.]*does not count/);
+  });
+});
+
 /** Claims that contradict "no free answers, nothing auto-approved, nothing starts before acceptance". */
 const FORBIDDEN = [
   /auto-?approv/i,

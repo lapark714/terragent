@@ -29,6 +29,17 @@ import type { RequestRow } from "./requests";
 
 export interface HandoffEdge { from: string; to: string; stage: string }
 
+/**
+ * awaiting_approval means a founder has to buy held paid data, and the coordinator is told never to touch it. An agent
+ * that parks anything else there strands it: no cron or review ever picks it up again (seen live on two free samples).
+ */
+export async function parkingRefusal(requestId: string): Promise<string | null> {
+  const held = await query<{ id: string }>("SELECT id FROM orders WHERE request_id = $1 AND status = ANY($2)", [requestId, [...WAITING_ORDER_STATUSES]]);
+  if (held.length) return null;
+  return `Request ${requestId} has no paid order waiting on a founder, so it can't be awaiting_approval: nothing would ever pick it up again. ` +
+    "terragent.add_note with what is blocking it, then hand it to the agent that should act, or leave it for the next company review.";
+}
+
 /** How every refusal to the sending agent ends: do the named step, then hand off again, alone. */
 const again = (to?: string) => `then call terragent.handoff${to ? ` to ${to}` : ""} again on its own`;
 
