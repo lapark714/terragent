@@ -10,14 +10,14 @@ const LEVEL: Record<Confidence, { filled: number; label: string; note: string }>
 export function ConfidenceMeter({ level }: { level: Confidence }) {
   const l = LEVEL[level];
   return (
-    <div className="flex items-center gap-3" role="img" aria-label={`${l.label}. ${l.note}`}>
+    <div className="flex flex-wrap items-center gap-x-3 gap-y-1" role="img" aria-label={`${l.label}. ${l.note}`}>
       <span className="flex gap-1" aria-hidden>
         {[0, 1, 2].map((i) => (
           <span key={i} className={`h-2 w-6 rounded-full ${i < l.filled ? "bg-fg" : "bg-line-strong"}`} />
         ))}
       </span>
       <span className="font-medium">{l.label}</span>
-      <span className="hidden text-sm text-fg-3 sm:inline">{l.note}</span>
+      <span className="basis-full text-sm text-fg-3 sm:basis-auto">{l.note}</span>
     </div>
   );
 }

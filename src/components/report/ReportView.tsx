@@ -1,60 +1,84 @@
-/** The public report: answer first, then evidence (images, measurements), caveats and sources. */
-import { dateUtc, usd } from "@/components/format";
-import { Wordmark } from "@/components/site/Wordmark";
+/**
+ * The public report. First screen: question, answer, confidence, limitations, human-review callout, share link.
+ * Then the evidence: a before/after comparison, other derived maps, measurement cards, and dated sources.
+ */
+import Link from "next/link";
+import { LogoLockup } from "@/components/site/Logo";
 import type { PublicReport } from "@/lib/dashboard/public";
-import { ConfidenceMeter } from "./ConfidenceMeter";
-import { Measurements } from "./Measurements";
-import { ReportImages } from "./ReportImages";
+import { dateUtc, usd } from "@/components/format";
+import { BeforeAfter } from "./BeforeAfter";
+import { MeasurementCards } from "./MeasurementCards";
+import { ReportHero } from "./ReportHero";
+import { SatImage } from "./SatImage";
+import { SourceList } from "./SourceList";
 
-function Section({ title, children }: { title: string; children: React.ReactNode }) {
+const ROLE_LABEL: Record<string, string> = { before: "Before", after: "After", index: "Index map", change: "Change map" };
+
+function Section({ title, children, note }: { title: string; note?: React.ReactNode; children: React.ReactNode }) {
   return (
     <section className="flex flex-col gap-4">
-      <h2 className="stretch-semi text-lg font-semibold">{title}</h2>
+      <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
+        <h2 className="stretch-semi text-xl font-semibold">{title}</h2>
+        {note && <p className="text-sm text-fg-3">{note}</p>}
+      </div>
       {children}
     </section>
   );
 }
 
-export function ReportView({ report: r }: { report: PublicReport }) {
+function ImageCard({ img }: { img: PublicReport["images"][number] }) {
+  const label = ROLE_LABEL[img.role] ?? img.role;
   return (
-    <div className="mx-auto max-w-4xl px-4 py-6 sm:px-6">
-      <header className="mb-12 flex items-center justify-between gap-4">
-        <Wordmark suffix="Report" />
-        <span className="text-sm text-fg-3">Verified {dateUtc(r.verifiedAt)}</span>
+    <figure className="overflow-hidden rounded-xl border border-line bg-panel">
+      <SatImage src={img.src} alt={img.caption || label} label={label} />
+      <figcaption className="flex flex-col gap-1 p-4 text-sm">
+        <span className="font-medium">
+          {label}
+          {img.date && <span className="font-normal text-fg-2">, {dateUtc(img.date)}</span>}
+        </span>
+        {img.caption && <span className="text-fg-2">{img.caption}</span>}
+        {img.source && <span className="text-fg-3">{img.source}</span>}
+      </figcaption>
+    </figure>
+  );
+}
+
+export function ReportView({ report: r, url }: { report: PublicReport; url?: string }) {
+  const before = r.images.find((i) => i.role === "before");
+  const after = r.images.find((i) => i.role === "after");
+  const paired = before && after;
+  const others = r.images.filter((i) => !paired || (i !== before && i !== after));
+
+  return (
+    <div className="mx-auto max-w-4xl px-4 py-4 sm:px-6 sm:py-5">
+      <header className="mb-8 flex items-center justify-between gap-4 sm:mb-12">
+        <Link href="/" aria-label="Terragent home" className="text-fg">
+          <LogoLockup className="h-7 sm:h-8" label="" />
+        </Link>
+        <span className="font-mono text-xs tracking-[0.12em] text-fg-3 uppercase">Report</span>
       </header>
 
-      <article className="flex flex-col gap-12">
-        <div className="flex flex-col gap-5">
-          <h1 className="stretch-wide text-[clamp(2rem,4.5vw,3.2rem)] leading-[1.05] font-semibold tracking-[-0.02em] text-balance">{r.title}</h1>
-          <p className="text-fg-2">
-            You asked: <span className="text-fg">{r.question}</span>
-            {r.location && <span className="text-fg-3"> ({r.location})</span>}
-          </p>
-          <p className="max-w-[44rem] text-xl leading-relaxed">{r.answer}</p>
-          <ConfidenceMeter level={r.confidence} />
-          {r.humanReview && (
-            <p className="max-w-[44rem] rounded-md border border-human/50 bg-human/10 px-4 py-3 text-fg">
-              Human review recommended. If you&apos;ll use this for an insurance claim, a legal matter, lending or safety, have a
-              qualified person check it first.
-            </p>
-          )}
-        </div>
+      <article className="flex flex-col gap-14">
+        <ReportHero report={r} url={url} />
 
-        {r.images.length > 0 && (
-          <Section title="Images">
-            <ReportImages images={r.images} />
+        {(paired || others.length > 0) && (
+          <Section title="What the satellite saw">
+            {paired && <BeforeAfter before={before} after={after} />}
+            {others.length > 0 && (
+              <div className="grid gap-4 sm:grid-cols-2">
+                {others.map((img) => (
+                  <ImageCard key={img.src} img={img} />
+                ))}
+              </div>
+            )}
           </Section>
         )}
 
         {r.measurements.length > 0 && (
           <Section title="Measurements">
-            <Measurements rows={r.measurements} />
+            <MeasurementCards rows={r.measurements} />
           </Section>
         )}
-
-        <Section title="Limitations">
-          <p className="max-w-[44rem] leading-relaxed text-fg-2">{r.limitations}</p>
-        </Section>
 
         {r.paidDataEstimate && (
           <Section title="What paid imagery would add">
@@ -65,21 +89,8 @@ export function ReportView({ report: r }: { report: PublicReport }) {
           </Section>
         )}
 
-        <Section title="Sources">
-          <ul className="flex flex-col divide-y divide-line border-y border-line text-sm">
-            {r.sources.map((s, i) => (
-              <li key={i} className="flex flex-col gap-1 py-3 sm:flex-row sm:items-baseline sm:justify-between sm:gap-6">
-                <span className="min-w-0">
-                  {s.url ? <a href={s.url} className="underline decoration-line-strong underline-offset-4 hover:decoration-fg" rel="noreferrer">{s.name}</a> : s.name}
-                  {s.itemId && <span className="ml-2 font-mono text-xs break-all text-fg-3">{s.itemId}</span>}
-                </span>
-                <span className="shrink-0 text-fg-2">
-                  {dateUtc(s.datetime)}
-                  {s.license && <span className="text-fg-3">, {s.license}</span>}
-                </span>
-              </li>
-            ))}
-          </ul>
+        <Section title="Sources" note="Capture dates in UTC">
+          <SourceList sources={r.sources} />
         </Section>
       </article>
 
@@ -87,8 +98,8 @@ export function ReportView({ report: r }: { report: PublicReport }) {
         <p>
           Written by Terragent&apos;s AI agents from satellite data and checked by a separate verifier agent
           {r.verifierScore !== null && <> (score {Math.round(r.verifierScore)} of 100)</>}. This is not a site inspection.{" "}
-          <a href="/terms" className="underline underline-offset-4 hover:text-fg">Terms</a> and{" "}
-          <a href="/acceptable-use" className="underline underline-offset-4 hover:text-fg">acceptable use</a>.
+          <Link href="/terms" className="underline underline-offset-4 hover:text-fg">Terms</Link> and{" "}
+          <Link href="/acceptable-use" className="underline underline-offset-4 hover:text-fg">acceptable use</Link>.
         </p>
       </footer>
     </div>

@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { cache } from "react";
 import { ReportView } from "@/components/report/ReportView";
-import { getPublicReport } from "@/lib/dashboard/public";
+import { getPublicReport, reportUrl } from "@/lib/dashboard/public";
 
 type Props = { params: Promise<{ token: string }> };
 
@@ -17,5 +17,5 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
 export default async function ReportPage({ params }: Props) {
   const report = await loadReport((await params).token);
   if (!report) notFound();
-  return <ReportView report={report} />;
+  return <ReportView report={report} url={reportUrl(report.token)} />;
 }
