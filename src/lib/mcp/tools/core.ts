@@ -4,7 +4,7 @@ import { AgentName, DecisionKind, RequestStatus } from "../../domain";
 import { logDecision } from "../../events";
 import { addNote, handoff, requireRequest, setStatus, STAGES } from "../../pipeline/requests";
 import { recordStatedWillingness } from "../../pipeline/revenue";
-import { getRequestView } from "../../pipeline/view";
+import { getRequestViewForAgent } from "../../pipeline/view";
 import type { ToolRegistrar } from "../types";
 
 const requestId = z.string().describe("req_… id");
@@ -23,7 +23,7 @@ const FINISHERS: Partial<Record<RequestStatus, readonly AgentName[]>> = {
 const VIA_TOOL: Partial<Record<RequestStatus, string>> = { delivered: "deliver_report", refused: "record_screening (allowed=false)" };
 
 export function register(r: ToolRegistrar): void {
-  r.tool("get_request", { request_id: requestId }, async ({ request_id }) => getRequestView(request_id));
+  r.tool("get_request", { request_id: requestId }, async ({ request_id }) => getRequestViewForAgent(request_id));
 
   r.tool("set_status", { request_id: requestId, status: RequestStatus, note: z.string().max(1000).optional() }, async (a, ctx) => {
     const allowed = FINISHERS[a.status];

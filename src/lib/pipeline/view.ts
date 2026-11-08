@@ -38,3 +38,40 @@ function trimPayload(p: Record<string, unknown>) {
   for (const [k, v] of Object.entries(p ?? {})) out[k] = typeof v === "string" && v.length > 300 ? `${v.slice(0, 300)}…` : v;
   return out;
 }
+
+/** Event types an agent needs to follow a request's progress; everything else (approvals, interventions, mail) is left out. */
+const AGENT_EVENT_TYPES = new Set(["request.created", "status.changed", "handoff", "decision.logged", "quote.created", "quote.accepted", "report.saved", "analysis.saved", "order.prepared", "verdict.saved"]);
+/** Payload fields that are safe, structured progress data (no free text). */
+const AGENT_EVENT_FIELDS = ["to", "from", "stage", "lane", "kind", "choice", "status", "recipe", "pass", "score"];
+
+/**
+ * get_request as AGENTS see it. Verified live (2026-11-08): Naïve flags a chat as having "read people's data" when a
+ * tool result DESCRIBES a person, even with name/email redacted (a customer block, a screening reason, old briefs and
+ * human-intervention entries in the history all did it; the same tool on a request without them did not). Once
+ * flagged, every later tool call waits for a human. So agents get business data only: no customer block, no
+ * free-text reasons, a structured event trail. Recipients are resolved server-side when anything is sent.
+ */
+export async function getRequestViewForAgent(id: string) {
+  const v = await getRequestView(id);
+  const [{ email, company }] = [v.customer];
+  const screening = v.screening as { allowed?: boolean; category?: string; outcome?: string } | null;
+  return {
+    id: v.id, status: v.status, stage: v.stage, owner_agent: v.owner_agent, priority: v.priority, source: v.source,
+    playbook: v.playbook, is_free_sample: v.is_free_sample, prospect_id: v.prospect_id,
+    question: v.question, location_text: v.location_text, lat: v.lat, lon: v.lon, h3_cells: v.h3_cells,
+    contact_on_file: !!email, company,
+    thread_id: v.thread_id, inbox: v.inbox,
+    screening: screening ? { allowed: screening.allowed ?? null, category: screening.category ?? null, outcome: screening.outcome ?? null } : null,
+    data_spec: v.data_spec, acquisition_plan: v.acquisition_plan, quote: v.quote, report: v.report, orders: v.orders,
+    revisions: v.revisions, cost_usd: v.cost_usd, price_usd: v.price_usd,
+    progress: v.recent_events
+      .filter((e) => AGENT_EVENT_TYPES.has(e.type))
+      .map((e) => {
+        const ev = e as Record<string, unknown>;
+        const out: Record<string, unknown> = { type: ev.type, actor: String(ev.actor ?? "").startsWith("human:") ? "founder" : ev.actor };
+        for (const f of AGENT_EVENT_FIELDS) if (ev[f] !== undefined && typeof ev[f] !== "object") out[f] = ev[f];
+        return out;
+      }),
+    note: v.note,
+  };
+}
