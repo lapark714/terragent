@@ -39,6 +39,21 @@ _This table is refreshed after platform research; see docs/platform/README.md fo
 
 ## Decisions
 
+- **2026-11-08 03:45 UTC — No human approvals in the pipeline (Laurence: "nothing should require human approval").**
+  Naïve's "read people's data" flag parked every tool call of real pipeline sessions, even calls set to `allow`. Fixes
+  shipped (scrub emails and names from tool results and briefs, business-only `get_request`), but six probes found no
+  trigger we control. So `AUTO_APPROVE_GATEWAY_TOOLS=true` (src/lib/pipeline/approval-policy.ts): the Naïve webhook
+  clears parked calls to our own catalog-allowed tools and to built-ins the agent's own config already allows. Never
+  cleared: `place_paid_order` (buying data needs a founder, spec §0; no payment method is connected anyway) and the
+  NEVER list (email.send, wallet, cards, payments, trading, social, phone, vault). Auto-approvals are logged as
+  `approval.auto_allowed` events, not interventions. **Founder to-do:** ask the Naïve team on-site how the flag is
+  decided for MCP tools.
+- **2026-11-08 — Pricing v2 (Laurence): no free answers; per-job quotes with options; nothing runs until accepted.**
+  The investigation (planning + source comparison) is free; its output is a quote of 1–3 options priced bottom-up
+  (data per km² × dates × data types + analysis + risk + margin, ranges when supplier prices are unknown). Work starts
+  only when the customer accepts an option (email reply or accept link). Quotes go out automatically (no founder
+  review). Free samples for outbound prospects stay the one exception (marketing cost). Being built now.
+
 - **2026-11-08 02:10 UTC — Outside outreach agent contained (Laurence: keep it, never send more, record every response).**
   An agent `terragent-outreach` (agt_zx12…, Sonnet 5), set up outside this repo with the admin key, sent **62 cold emails to
   62 businesses** 00:59–01:30 UTC from `outreach@terragent-qqhrnj.usenaive.ai` (free Naïve system domain), bypassing our
