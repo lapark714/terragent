@@ -115,6 +115,13 @@ describe("customer and supplier emails", () => {
     expect(e.text).toContain("https://terragent.test/request/req_1");
   });
 
+  it("shows a fraction measurement as a percentage", () => {
+    const m = [{ metric: "Clear fraction of the AOI", value: 1, unit: "fraction", note: null }, { metric: "Share burned", value: 0.4237, unit: "fraction", note: null }];
+    const e = renderReportDelivery({ question: "Did it burn?", report: { ...report, measurements: m } });
+    expect(e.text).toContain("- Clear fraction of the AOI: 100%");
+    expect(e.text).toContain("- Share burned: 42.4%");
+  });
+
   it("offers monitoring of the site in every delivery, unless it is already monitored", () => {
     const e = renderReportDelivery({ question: "Did it flood?", report });
     expect(e.text).toContain(MONITORING_OFFER);

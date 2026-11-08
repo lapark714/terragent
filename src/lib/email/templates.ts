@@ -155,8 +155,15 @@ const usdFmt = (n: number) => `$${n.toFixed(n % 1 === 0 ? 0 : 2)}`;
 const capitalise = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
 const dateOnly = (iso: string | null) => (iso ? iso.slice(0, 10) : "date unknown");
 
+/** A fraction (0–1) reads as a percentage: "100%", not "1 fraction". */
+const isFractionUnit = (u: string | null) => !!u && /^(fraction|share|ratio)( of .*)?$/i.test(u.trim());
+
 function measurementLine(m: ReportForEmail["measurements"][number]): string {
-  const value = m.value === null ? "n/a" : `${Number(m.value.toPrecision(4))}${m.unit ? ` ${m.unit}` : ""}`;
+  const value = m.value === null
+    ? "n/a"
+    : isFractionUnit(m.unit) && m.value >= 0 && m.value <= 1
+      ? `${Number((m.value * 100).toPrecision(3))}%`
+      : `${Number(m.value.toPrecision(4))}${m.unit ? ` ${m.unit}` : ""}`;
   return `- ${m.metric}: ${value}${m.note ? ` (${m.note})` : ""}`;
 }
 
