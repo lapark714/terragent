@@ -105,6 +105,8 @@ export const TOOLS: readonly ToolSpec[] = [
   // --- analysis: Analytics ---------------------------------------------------
   { name: "get_analysis_job", group: "analysis", agents: ["analytics"], permission: "allow",
     description: "Everything needed to run the pipeline for a request (bootstrap command, bundle file id, CLI arguments). Pass monitor_id for a monitor re-check of a delivered request." },
+  { name: "run_analysis", group: "analysis", agents: ["analytics"], permission: "allow",
+    description: "Run the imagery pipeline for a request on the backend's own computer (no bash needed), upload the images and save the AnalysisResult; returns the measured indices, dates, warnings and timings. With monitor_id: a monitor re-check of a delivered request, recorded on the monitor (record_monitor_check is done for you; nothing is saved on the request)." },
   { name: "save_analysis", group: "analysis", agents: ["analytics"], permission: "allow",
     description: "Save the pipeline's AnalysisResult and published image file ids; writes derived values to the Earth index." },
   { name: "get_analysis", group: "analysis", agents: ["interpreter", "verifier"], permission: "allow",

@@ -2,6 +2,7 @@
 import { z } from "zod";
 import { AnalysisResult } from "../../domain";
 import { getAnalysisJob, getAnalysisView, saveAnalysis } from "../../pipeline/analyses";
+import { runAnalysis } from "../../pipeline/run-analysis";
 import type { ToolRegistrar } from "../types";
 
 export function register(r: ToolRegistrar): void {
@@ -14,6 +15,15 @@ export function register(r: ToolRegistrar): void {
       ),
     },
     async ({ request_id, monitor_id }) => getAnalysisJob(request_id, { monitorId: monitor_id }),
+  );
+
+  r.tool(
+    "run_analysis",
+    {
+      request_id: z.string(),
+      monitor_id: z.string().optional().describe("monitor re-check (from list_due_monitors): recorded on the monitor, nothing saved on the request"),
+    },
+    async ({ request_id, monitor_id }, ctx) => runAnalysis({ requestId: request_id, monitorId: monitor_id }, ctx.agent),
   );
 
   r.tool(

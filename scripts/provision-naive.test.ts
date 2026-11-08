@@ -100,9 +100,10 @@ describe("agent configs", () => {
     expect(who("data_run")).toEqual(["sourcing"]);
     expect(configsOf("sourcing").data_run).toEqual({ enabled: true, permission: "allow" });
     expect(who("web_search")).toEqual(["acquisition", "comms-outreach", "market-researcher", "sourcing"]);
-    expect(who("bash")).toEqual(["analytics"]);
-    expect(who("publish_file")).toEqual(["analytics"]);
-    expect(who("fetch_file")).toEqual(["analytics"]);
+    // The pipeline runs server-side (run_analysis): no agent gets a shell or file transfer.
+    expect(who("bash")).toEqual([]);
+    expect(who("publish_file")).toEqual([]);
+    expect(who("fetch_file")).toEqual([]);
     expect(who("view_image")).toEqual(["interpreter", "verifier"]);
     expect(who("board_write")).toEqual(["coordinator"]);
     expect(who("send_to_agent")).toEqual(["coordinator"]);
@@ -156,9 +157,10 @@ describe("agent configs", () => {
     // PRICING v2: no quote waits for a founder; create_quote hands the options to comms-customer to send.
     expect(withUrl.pricing.system).not.toMatch(/held for a founder/);
     expect(withUrl.pricing.system).toMatch(/create_quote's `next`: it hands the quote to comms-customer \(stage quote\)/);
-    // Analytics: per-run job files on the shared computer, and monitor mode for re-checks.
-    expect(withUrl.analytics.system).toMatch(/job_path/);
-    expect(withUrl.analytics.system).toMatch(/get_analysis_job\(\{ request_id, monitor_id \}\)/);
+    // Analytics: one server-side call per run, and monitor mode for re-checks.
+    expect(withUrl.analytics.system).toMatch(/run_analysis\(\{ request_id \}\)/);
+    expect(withUrl.analytics.system).toMatch(/run_analysis\(\{ request_id, monitor_id \}\)/);
+    expect(withUrl.analytics.system).not.toMatch(/bash timeout|publish_file|fetch_file the bundle/);
     // Comms 2: screening before a reply's handoff; prospect replies plan new work; stated prices are recorded.
     expect(withUrl["comms-customer"].system).toMatch(/record_screening \(allowed, ok\) before any handoff/);
     expect(withUrl["comms-customer"].system).toMatch(/stated_willingness_usd/);
