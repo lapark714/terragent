@@ -31,6 +31,8 @@ export const SETTING = {
   naiveWebhookSecrets: "naive.webhook_secrets",
   /** { file_id: "fil_…", sha256, uploaded_at } — the pipeline tarball the Analytics agent bootstraps from */
   pipelineBundle: "pipeline.bundle",
+  /** { id: "cmp_…", created_at } — the backend-owned Naïve computer that runs the imagery pipeline (12 h max life; recreated on demand) */
+  pipelineComputer: "pipeline.computer",
   /** AgentMail webhook { id, secret } */
   agentmailWebhook: "agentmail.webhook",
   /** { hello: boolean, data: boolean, outreach: boolean } — founder-armed after approving first send */
