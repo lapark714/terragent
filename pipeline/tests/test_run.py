@@ -1,5 +1,7 @@
-"""The CLI end to end with the network stubbed: AnalysisResult shape, files, exit codes."""
+"""The CLI end to end with the network stubbed: AnalysisResult shape, files, exit codes, the job deadline."""
 import json
+import threading
+import time
 
 import numpy as np
 import pytest
@@ -86,3 +88,60 @@ def test_invalid_job_exits_2(job_file, tmp_path, capsys):
 
 def test_non_finite_numbers_become_null():
     assert analysis._finite({"a": [float("nan"), 1.5], "b": float("inf")}) == {"a": [None, 1.5], "b": None}
+
+
+@pytest.fixture
+def stuck(monkeypatch):
+    """Planetary Computer hangs: the patched step blocks until the test ends."""
+    release = threading.Event()
+    exits = []
+    monkeypatch.setattr(run, "_exit", exits.append)
+    yield release, exits
+    release.set()
+
+
+def test_deadline_returns_an_empty_result_with_a_warning_and_exits_0(job_file, monkeypatch, tmp_path, capsys, stuck):
+    release, exits = stuck
+    monkeypatch.setattr(analysis, "find_scene", lambda *a, **k: release.wait(30) and (None, []))
+    t0 = time.perf_counter()
+    assert run.main(["--job", job_file(), "--out", str(tmp_path / "o"), "--deadline-s", "0.3"]) == 0
+    assert time.perf_counter() - t0 < 5
+    assert exits == [0]  # hard exit: the stuck read must not keep the process alive
+    result = json.loads(capsys.readouterr().out)
+    assert set(result) == RESULT_KEYS
+    assert result["after"] is None and result["before"] is None and result["indices"] == [] and result["images"] == []
+    assert result["timings_s"]["deadline_s"] == 0.3 and result["timings_s"]["after_search"] >= 0.25
+    assert "compared with 2024-11-13..2025-01-11" in result["warnings"][0]  # warnings found before the deadline stay
+    assert result["warnings"][-1].startswith("Stopped at the 0.3 s job deadline during the 'after_search' step")
+    assert result == json.loads((tmp_path / "o" / "result.json").read_text())
+
+
+def test_deadline_names_scenes_already_chosen(job_file, offline, monkeypatch, tmp_path, capsys, stuck):
+    release, _ = stuck
+    monkeypatch.setattr(analysis, "load_scene", lambda *a, **k: release.wait(30))
+    assert run.main(["--job", job_file(), "--out", str(tmp_path / "o"), "--deadline-s", "0.3"]) == 0
+    warning = json.loads(capsys.readouterr().out)["warnings"][-1]
+    assert "during the 'read' step" in warning
+    assert "after scene S2C_MSIL2A_20250201_TEST and before scene S2C_MSIL2A_20241228_TEST had been chosen" in warning
+
+
+def test_finished_jobs_exit_normally(job_file, offline, tmp_path, stuck):
+    _, exits = stuck
+    assert run.main(["--job", job_file(), "--out", str(tmp_path / "o"), "--deadline-s", "30"]) == 0
+    assert exits == []
+
+
+def test_crashes_inside_the_job_still_raise(job_file, monkeypatch, tmp_path):
+    monkeypatch.setattr(analysis, "find_scene", lambda *a, **k: 1 / 0)
+    with pytest.raises(ZeroDivisionError):
+        run.main(["--job", job_file(), "--out", str(tmp_path / "o")])
+
+
+def test_deadline_from_flag_env_or_default(monkeypatch):
+    monkeypatch.delenv(run.DEADLINE_ENV, raising=False)
+    assert run.deadline_seconds() == 75
+    monkeypatch.setenv(run.DEADLINE_ENV, "120")
+    assert run.deadline_seconds() == 120
+    assert run.deadline_seconds(10) == 10
+    monkeypatch.setenv(run.DEADLINE_ENV, "soon")
+    assert run.deadline_seconds() == 75

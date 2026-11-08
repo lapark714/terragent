@@ -2,7 +2,18 @@ import numpy as np
 from PIL import Image
 
 from terragent_pipeline import render
-from terragent_pipeline.render import MAP_SIDE, MIN_WIDTH, NDVI_RAMP, Header, data_ramp, hex_rgb, nice_date, stretch_for
+from terragent_pipeline.render import (
+    MAP_SIDE,
+    MIN_WIDTH,
+    NDVI_RAMP,
+    Header,
+    data_ramp,
+    hex_rgb,
+    nice_date,
+    scale_bar_metres,
+    scale_label,
+    stretch_for,
+)
 
 HEADER = Header("NDVI", "vegetation index · 1 Feb 2025", "Contains modified Copernicus Sentinel data 2025", 10)
 
@@ -55,3 +66,14 @@ def test_true_color_png_is_palettised(tmp_path):
 
 def test_nice_date():
     assert nice_date("2025-02-01T18:34:31Z") == "1 Feb 2025"
+
+
+def test_scale_bar_labels_use_true_division():
+    assert scale_label(2500) == "2.5 km"
+    assert [scale_label(m) for m in (250, 1000, 2000, 50000)] == ["250 m", "1 km", "2 km", "50 km"]
+
+
+def test_scale_bar_picks_the_longest_nice_length_that_fits():
+    assert scale_bar_metres(10 * 200 / 600) == 250  # 2 km AOI at 10 m drawn 600 px wide: 3.3 m/px
+    assert scale_bar_metres(25) == 2500  # 2500 m = 100 px
+    assert scale_bar_metres(0.05) == 10  # nothing fits (sub-metre pixels): the shortest bar

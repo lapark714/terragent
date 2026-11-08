@@ -5,7 +5,7 @@
  * plus an event for every run. The key never appears in errors, results or logs.
  */
 import { CAPS } from "../config";
-import { env } from "../env";
+import { env, isOffline } from "../env";
 import { logEvent } from "../events";
 import { USER_AGENT, errorMessage } from "../signals/http";
 import { findAllowed, normalizeInput } from "./allowlist";
@@ -64,6 +64,8 @@ interface Reply {
 }
 
 async function call(method: "GET" | "POST", path: string, body?: unknown, timeoutMs = 30_000): Promise<Reply> {
+  // Offline mode (npm run dev:local): never reach Monid, not even the free endpoints.
+  if (isOffline()) throw new Error("offline mode: Monid isn't called locally");
   const key = env("MONID_API_KEY");
   if (!key) throw new Error("MONID_API_KEY is not set");
   let res: Response;
@@ -180,6 +182,10 @@ export async function monidRun(args: {
   agent?: string;
 }): Promise<MonidRunResult> {
   const { provider, endpoint, purpose, requestId, agent } = args;
+  if (isOffline()) {
+    await logEvent("offline.skipped", agent ?? "system", { service: "monid", call: "run", provider, endpoint, purpose }, requestId).catch(() => undefined);
+    return { status: "REFUSED", output: null, cost_usd: 0, run_id: null, reason: "offline" };
+  }
   const pre = await preflight(args);
   const { result, charge } = "refused" in pre ? outcome("REFUSED", pre.refused) : await execute(provider, endpoint, pre.input, pre.estimate);
   if (pre.estimate !== undefined) result.estimated_usd = pre.estimate;

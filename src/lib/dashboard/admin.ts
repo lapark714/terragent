@@ -10,9 +10,10 @@ import { Inbox } from "../domain";
 import { env } from "../env";
 import { logDecision, logEvent, logIntervention } from "../events";
 import { decideApproval, listPendingApprovals, type PendingApproval } from "../naive/sessions";
-import { approveQuote } from "../pipeline/quotes";
+import { approveQuote, rejectQuote } from "../pipeline/quotes";
 import { SETTING } from "../settings";
 import { getInboxArmed, NAIVE_APPROVALS_CACHE_KEY } from "./approvals";
+import { invalidateDashboard } from "./cache";
 import { invalidateLive, num } from "./rows";
 
 export type AdminAuth = "ok" | "disabled" | "denied";
@@ -31,7 +32,7 @@ type Who = { actor: string; reason: string };
 export const AdminAction = z.discriminatedUnion("action", [
   z.object({ action: z.literal("naive-approval"), session_id: z.string().min(1), tool_call_id: z.string().min(1), decision: z.enum(["allow", "deny"]), ...who }),
   z.object({ action: z.literal("order"), order_id: z.string().min(1), decision: z.enum(["approve", "reject"]), ...who }),
-  z.object({ action: z.literal("quote"), quote_id: z.string().min(1), decision: z.literal("approve"), ...who }),
+  z.object({ action: z.literal("quote"), quote_id: z.string().min(1), decision: z.enum(["approve", "reject"]), ...who }),
   z.object({ action: z.literal("template"), template_id: z.string().min(1), decision: z.enum(["approve", "retire"]), ...who }),
   z.object({ action: z.literal("inbox"), inbox: Inbox, armed: z.boolean(), ...who }),
 ]);
@@ -52,6 +53,38 @@ async function parkedOrderCall(orderId: string): Promise<PendingApproval | undef
 }
 
 /**
+ * Takes back the intervention logged just before a Naïve decision that then failed: nothing changed, so it is not
+ * a human step (judges count them). The event log keeps a trace.
+ */
+async function undoIntervention(i: { actor: string; action: string; refId: string; requestId?: string | null }, error: unknown) {
+  const db = await getDb();
+  await db.query(
+    `DELETE FROM interventions WHERE id = (
+       SELECT id FROM interventions WHERE actor = $1 AND action = $2 AND ref_id = $3 ORDER BY id DESC LIMIT 1)`,
+    [i.actor, i.action, i.refId],
+  );
+  await logEvent("human.intervention_undone", `human:${i.actor}`, {
+    action: i.action, ref_id: i.refId, error: error instanceof Error ? error.message.slice(0, 300) : String(error).slice(0, 300),
+  }, i.requestId);
+}
+
+/**
+ * Logs the founder's intervention, THEN answers Naïve. The session may resume (and run the tool through our MCP
+ * server) before decideApproval even returns, and core's approveOrder links a fresh dashboard `naive_allow` row to
+ * the request instead of logging a second one, so the row has to exist first. A failed decision takes it back.
+ */
+async function decideInNaive(parked: PendingApproval, decision: "allow" | "deny", intervention: Parameters<typeof logIntervention>[0] & { refId: string }) {
+  await logIntervention(intervention);
+  try {
+    await decideApproval(parked.session_id, parked.tool_call_id, decision, intervention.reason);
+  } catch (e) {
+    await undoIntervention(intervention, e);
+    throw e;
+  }
+  invalidateLive(NAIVE_APPROVALS_CACHE_KEY);
+}
+
+/**
  * One founder decision on a paid order, whichever panel it came from. The order row is decided first, so when Naïve
  * resumes the parked place_paid_order call, core's approveOrder finds it approved and doesn't log a second intervention.
  */
@@ -64,17 +97,18 @@ async function decideOrder(orderId: string, decision: "approve" | "reject", by: 
     [orderId, status, by.actor],
   );
   if (!order) throw new AdminConflict("That order is not awaiting approval any more.");
+  const intervention = { actor: by.actor, action: `${decision}_order`, reason: by.reason, requestId: order.request_id, refId: orderId };
   if (parked) {
     try {
-      await decideApproval(parked.session_id, parked.tool_call_id, decision === "approve" ? "allow" : "deny", by.reason);
+      await decideInNaive(parked, decision === "approve" ? "allow" : "deny", intervention);
     } catch (e) {
       await db.query("UPDATE orders SET status = 'awaiting_approval', approved_by = NULL, decided_at = NULL, updated_at = now() WHERE id = $1", [orderId]);
       throw e;
     }
-    invalidateLive(NAIVE_APPROVALS_CACHE_KEY);
+  } else {
+    await logIntervention(intervention);
   }
   const actor = `human:${by.actor}`;
-  await logIntervention({ actor: by.actor, action: `${decision}_order`, reason: by.reason, requestId: order.request_id, refId: orderId });
   await logDecision({
     requestId: order.request_id, kind: "free_vs_paid", agent: actor, reasoning: by.reason,
     choice: `paid order ${orderId} ${status} by a founder (${order.provider_id}, ~$${num(order.est_cost_usd)})${decision === "approve" ? "; founder buys manually" : ""}`,
@@ -86,32 +120,39 @@ async function decideOrder(orderId: string, decision: "approve" | "reject", by: 
 async function decideNaiveCall(a: Extract<AdminAction, { action: "naive-approval" }>) {
   const parked = (await listPendingApprovals()).find((p) => p.session_id === a.session_id && p.tool_call_id === a.tool_call_id);
   if (!parked) throw new AdminConflict("That tool call is not waiting for a decision any more.");
+  if (a.decision === "allow" && parked.approvable === false) {
+    throw new AdminConflict(`${parked.tool} from ${parked.agent} can only be denied here. Decide it in the Naïve console if it really must run.`);
+  }
   const orderId = paidOrderOf(parked);
   if (orderId) {
     const db = await getDb();
     const [order] = await db.query<{ status: string }>("SELECT status FROM orders WHERE id = $1", [orderId]);
     if (order?.status === "awaiting_approval") return decideOrder(orderId, a.decision === "allow" ? "approve" : "reject", a, parked);
   }
-  await decideApproval(a.session_id, a.tool_call_id, a.decision, a.reason);
-  invalidateLive(NAIVE_APPROVALS_CACHE_KEY);
-  await logIntervention({ actor: a.actor, action: `naive_${a.decision}`, reason: a.reason, refId: a.tool_call_id });
+  await decideInNaive(parked, a.decision, { actor: a.actor, action: `naive_${a.decision}`, reason: a.reason, refId: a.tool_call_id });
   return { done: `${a.decision === "allow" ? "Allowed" : "Denied"} the paused tool call` };
 }
 
-/** Core's approveQuote logs the intervention and hands the quote to comms-customer to send. */
-async function approveHeldQuote(a: Extract<AdminAction, { action: "quote" }>) {
+/**
+ * Core's approveQuote / rejectQuote log the intervention (with the founder's reason) and hand the request on:
+ * approved → comms-customer sends the quote; rejected → pricing looks for a cheaper plan.
+ */
+async function decideHeldQuote(a: Extract<AdminAction, { action: "quote" }>) {
   const db = await getDb();
   const [quote] = await db.query<{ status: string }>("SELECT status FROM quotes WHERE id = $1", [a.quote_id]);
   if (quote?.status !== "needs_approval") throw new AdminConflict("That quote is not waiting for approval any more.");
+  const approve = a.decision === "approve";
   try {
-    await approveQuote(a.quote_id, a.actor);
+    if (approve) await approveQuote(a.quote_id, a.actor, a.reason);
+    else await rejectQuote(a.quote_id, a.actor, a.reason);
   } catch (e) {
-    // The approval is saved before the hand-off; say so rather than invite a second click.
+    // The decision is saved before the hand-off; say so rather than invite a second click.
     const [after] = await db.query<{ status: string }>("SELECT status FROM quotes WHERE id = $1", [a.quote_id]);
-    if (after?.status !== "approved") throw e;
-    return { done: `Quote approved, but handing it to the customer agent failed: ${e instanceof Error ? e.message : String(e)}` };
+    if (after?.status !== (approve ? "approved" : "declined")) throw e;
+    const who = approve ? "the customer agent" : "the pricing agent";
+    return { done: `Quote ${approve ? "approved" : "rejected"}, but handing it to ${who} failed: ${e instanceof Error ? e.message : String(e)}` };
   }
-  return { done: "Quote approved. The customer agent is sending it now." };
+  return { done: approve ? "Quote approved. The customer agent is sending it now." : "Quote rejected. The pricing agent is looking for a cheaper plan." };
 }
 
 async function setInboxArmed(a: Extract<AdminAction, { action: "inbox" }>) {
@@ -130,14 +171,23 @@ async function setInboxArmed(a: Extract<AdminAction, { action: "inbox" }>) {
   return { done: `${a.inbox} inbox ${a.armed ? "armed" : "disarmed"}` };
 }
 
+/** Runs one founder action, then drops the cached dashboard reads so every viewer sees it on the next poll. */
 export async function runAdminAction(a: AdminAction): Promise<{ done: string }> {
+  try {
+    return await dispatch(a);
+  } finally {
+    invalidateDashboard();
+  }
+}
+
+async function dispatch(a: AdminAction): Promise<{ done: string }> {
   switch (a.action) {
     case "naive-approval":
       return decideNaiveCall(a);
     case "order":
       return decideOrder(a.order_id, a.decision, a, await parkedOrderCall(a.order_id));
     case "quote":
-      return approveHeldQuote(a);
+      return decideHeldQuote(a);
     case "template": {
       const db = await getDb();
       const [row] =

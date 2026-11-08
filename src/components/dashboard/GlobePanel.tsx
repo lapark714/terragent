@@ -1,11 +1,10 @@
 "use client";
-/** The globe region: layer toggles, live counts, the agent activity feed, and the globe itself. */
+/** The globe region: layer toggles, live counts, and the globe itself (the activity feed has its own panel). */
 import { useMemo, useState } from "react";
 import { LAYERS, type Layer } from "@/lib/domain";
-import type { ActivityRow, GlobeData } from "@/lib/dashboard/types";
-import { actorLabel, ago, clockUtc, eventLabel, isHuman, STATUS_LABEL } from "../format";
+import type { GlobeData } from "@/lib/dashboard/types";
+import { STATUS_LABEL } from "../format";
 import { LAYER_HEX, LAYER_LABEL } from "../palette";
-import { useNow } from "../useNow";
 import { GlobeLoader } from "./GlobeLoader";
 
 const ALL_ON = Object.fromEntries(LAYERS.map((l) => [l, true])) as Record<Layer, boolean>;
@@ -20,10 +19,9 @@ function Toggle({ on, color, label, onClick }: { on: boolean; color: string; lab
   );
 }
 
-export function GlobePanel({ data, activity, className = "" }: { data: GlobeData | null; activity: ActivityRow[] | null; className?: string }) {
+export function GlobePanel({ data, className = "" }: { data: GlobeData | null; className?: string }) {
   const [visible, setVisible] = useState(ALL_ON);
   const [signals, setSignals] = useState(true);
-  const now = useNow();
 
   // Follow the newest live customer request: when a judge submits one, the globe swings to it.
   const live = useMemo(() => (data?.requests ?? []).filter((r) => r.active && !r.sample).sort((a, b) => b.at.localeCompare(a.at)), [data]);
@@ -55,22 +53,7 @@ export function GlobePanel({ data, activity, className = "" }: { data: GlobeData
           </p>
         )}
       </div>
-
-      {activity && activity.length > 0 && (
-        <div className="pointer-events-none absolute inset-x-0 bottom-0 bg-gradient-to-t from-panel via-panel/80 to-transparent p-4 pt-10">
-          <h3 className="mb-1.5 text-xs text-fg-3">Agent activity</h3>
-          <ol className="flex flex-col gap-0.5 text-[13px]" aria-live="polite">
-            {activity.slice(0, 5).map((e) => (
-              <li key={e.id} className="flex gap-3 truncate">
-                <span className="w-10 shrink-0 text-fg-3 tabular-nums">{now ? ago(e.at, now) : clockUtc(e.at)}</span>
-                <span className={isHuman(e.actor) ? "text-human" : "text-fg"}>{actorLabel(e.actor)}</span>
-                <span className="truncate text-fg-2">{eventLabel(e.type).toLowerCase()}</span>
-                {e.request && <span className="font-mono text-xs text-fg-3">{e.request}</span>}
-              </li>
-            ))}
-          </ol>
-        </div>
-      )}
+      {!data && <p className="absolute inset-x-0 bottom-0 p-4 text-sm text-fg-3">Loading the Earth index.</p>}
     </section>
   );
 }

@@ -26,7 +26,8 @@ function Bar({ stage, widthPct }: { stage: FunnelStage; widthPct: number }) {
   const parts = PLAYBOOKS.filter((p) => stage.byPlaybook[p] > 0);
   const label = parts.map((p) => `${PLAYBOOK_LABEL[p]} ${stage.byPlaybook[p]}`).join(", ");
   return (
-    <div className="flex h-2 gap-[2px]" style={{ width: `${widthPct}%` }} role="img" aria-label={label || "None yet"}>
+    // Rounded so the server-rendered style string matches the client's (no hydration mismatch).
+    <div className="flex h-2 gap-[2px]" style={{ width: `${widthPct.toFixed(2)}%` }} role="img" aria-label={label || "None yet"}>
       {parts.map((p: Playbook) => (
         <span key={p} title={`${PLAYBOOK_LABEL[p]}: ${count(stage.byPlaybook[p])}`} className={`h-full rounded-full ${PLAYBOOK_BG[p]}`} style={{ flexGrow: stage.byPlaybook[p] }} />
       ))}

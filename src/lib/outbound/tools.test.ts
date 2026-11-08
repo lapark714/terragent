@@ -68,7 +68,7 @@ describe("outbound MCP tool groups", () => {
     const res = (await call(collect(coordinator), "get_allocation", {})) as { source: string; free_samples: Room[] };
     expect(res.source).toBe("default");
     expect(res.free_samples.map((s) => [s.playbook, s.limit_per_run, s.limit_today, s.remaining])).toEqual([
-      ["disasters", 3, 20, 3], ["deforestation", 2, 12, 2], ["mining", 2, 8, 2],
+      ["disasters", 3, 6, 3], ["deforestation", 2, 4, 2], ["mining", 2, 3, 2], // per run of 6, per day of 12, rounded up
     ]);
   });
 

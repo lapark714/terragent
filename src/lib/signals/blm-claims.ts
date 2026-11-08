@@ -2,10 +2,7 @@
  * New BLM mining claims: MLRS data via the BLM ArcGIS Hub "Not Closed" layer (no key, refreshed ~daily,
  * docs/platform/signals.md §3.7b). A company staking ground files a block of adjacent claims at once
  * ("ROC 3001…3560"), so claims are clustered into one signal per block. Claimant names aren't in this layer;
- * the case numbers find them in MLRS.
- *
- * Not registered yet: "blm_claims" has to join SIGNAL_FEEDS in domain.ts first (shared change), then
- * index.ts adds it to FETCHERS and FEEDS_BY_PLAYBOOK.mining.
+ * the case numbers find them in MLRS. Registered in index.ts as the mining playbook's first feed.
  */
 import type { SignalInput } from "../domain";
 import { clusterPoints, meanPoint, radiusKm, type GeoPoint } from "./cluster";

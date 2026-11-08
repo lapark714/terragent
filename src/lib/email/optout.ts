@@ -1,7 +1,7 @@
 /** Opt-out tokens (never the address in the URL) and the suppression list. */
 import { agentmailErrorCode, mailApi } from "../agentmail/client";
 import { getDb } from "../db/client";
-import { publicBaseUrl } from "../env";
+import { isOffline, publicBaseUrl } from "../env";
 import { logEvent } from "../events";
 import { newToken } from "../ids";
 import { normalizeEmail } from "./address";
@@ -62,6 +62,8 @@ export async function suppress(email: string, reason: SuppressionReason, actor =
 }
 
 async function blockList(addr: string, reason: SuppressionReason, actor: string) {
+  // Offline (local demo database): our list is enough; blocklisted_at stays NULL so a later suppress online adds it.
+  if (isOffline()) return;
   try {
     await mailApi().blockSend(addr, reason === "opt_out" ? "opted out" : "suppressed by Terragent");
   } catch (e) {

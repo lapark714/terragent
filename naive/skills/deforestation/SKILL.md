@@ -11,9 +11,9 @@ playbook checks a supplier's land for tree-cover loss and writes a plain complia
 
 | Feed | What it gives | Act on |
 |---|---|---|
-| `gfw` (Global Forest Watch integrated alerts: GLAD-L, GLAD-S2, RADD) | recent tree-cover-loss alerts with confidence | high-confidence clusters in commodity regions (Brazil, Indonesia, Malaysia, Cote d'Ivoire, Ghana, Colombia, Peru, Vietnam) |
-| `news` | EU Deforestation Regulation (EUDR) news, enforcement, companies named in deforestation reports | companies or regions named |
-| Naive data tools (`trade`, `jobs`, `companies`) | customs import records, companies hiring EUDR / sustainability compliance roles | importers of the seven commodities |
+| `gfw` (Global Forest Watch integrated alerts: GLAD-L, GLAD-S2, RADD) | recent tree-cover-loss alerts with confidence, one signal per clearing front | high-confidence clusters in the watched commodity regions (Rondônia, Pará, Mato Grosso, Paraguayan Chaco, Riau, West Kalimantan, western Côte d'Ivoire, western Ghana) |
+| `firms` (NASA FIRMS VIIRS, same regions) | active fires in those forest regions | fire clusters on or next to forest: clearing by burning, often ahead of GFW alerts |
+| Not feeds: Naïve data tools (trade, jobs, companies, news), web_search | customs import records, companies hiring EUDR / sustainability compliance roles, EUDR enforcement news | importers of the seven commodities, companies or regions named |
 
 The seven EUDR commodities: cattle (beef, leather), cocoa, coffee, oil palm, rubber, soya, wood. The EUDR cut-off
 date is 31 December 2020: land deforested after it cannot supply the EU market.

@@ -1,3 +1,5 @@
+import { createServer } from "node:http";
+import type { AddressInfo } from "node:net";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { SignalInput } from "../domain";
 import { fixture, fixtureJson, json, mockFetch, text } from "./__fixtures__/fetch-mock";
@@ -37,6 +39,43 @@ describe("gfw", () => {
       expect(s.raw.pixels as number).toBeGreaterThanOrEqual(10);
       expect(s.lat!).toBeGreaterThan(-10);
       expect(s.lat!).toBeLessThan(-9);
+    }
+  });
+
+  it("follows the keyless route's 307 to the current version, still a POST with the same body", async () => {
+    // Live (2026-11-07): POST …/latest/download/json → 307 → …/v<YYYYMMDD>/download/json → 200. fetch must re-send the
+    // POST and its body (307 keeps both; a 302 would turn it into a GET), so run the real fetch against a local server.
+    vi.stubEnv("GFW_API_KEY", "");
+    const seen: { method?: string; url?: string; body: string; origin?: string }[] = [];
+    const server = createServer((req, res) => {
+      let body = "";
+      req.on("data", (chunk) => (body += chunk));
+      req.on("end", () => {
+        seen.push({ method: req.method, url: req.url, body, origin: req.headers.origin });
+        if (req.url?.includes("/latest/")) {
+          res.writeHead(307, { location: req.url.replace("/latest/", "/v20261107/") }).end();
+        } else {
+          res.writeHead(200, { "content-type": "application/json" }).end(fixture("gfw-integrated-alerts.json"));
+        }
+      });
+    });
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    const local = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+    const realFetch = globalThis.fetch;
+    vi.stubGlobal("fetch", (input: string, init?: RequestInit) => realFetch(input.replace("https://data-api.globalforestwatch.org", local), init));
+    try {
+      const { signals, warnings } = await fetchGfw({ bbox: RONDONIA, since: new Date("2026-10-31T00:00:00Z") });
+      expect(seen.map((r) => [r.method, r.url])).toEqual([
+        ["POST", "/dataset/gfw_integrated_alerts/latest/download/json"],
+        ["POST", "/dataset/gfw_integrated_alerts/v20261107/download/json"],
+      ]);
+      expect(seen[1].body).toBe(seen[0].body);
+      expect(JSON.parse(seen[1].body)).toMatchObject({ sql: expect.stringContaining("FROM results"), geometry: { type: "Polygon" } });
+      expect(seen[1].origin).toBe("localhost");
+      expect(warnings).toEqual([expect.stringMatching(/GFW_API_KEY not set/)]);
+      expect(signals.length).toBeGreaterThan(0);
+    } finally {
+      await new Promise((resolve) => server.close(resolve));
     }
   });
 

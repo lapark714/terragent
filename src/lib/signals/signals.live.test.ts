@@ -36,7 +36,7 @@ describe.each(cases)("live %s", (feed, opts) => {
 it("live blm_claims: new claim blocks from the BLM Hub layer", async () => {
   const { signals, warnings } = await fetchBlmClaims({ since: new Date(Date.now() - 2 * day) });
   console.log(`blm_claims: ${signals.length} block(s)`, signals[0]?.title ?? "", warnings);
-  for (const s of signals) SignalInput.parse({ ...s, feed: "mrds" }); // until SIGNAL_FEEDS lists blm_claims
+  for (const s of signals) SignalInput.parse(s);
   expect(signals.length + warnings.length).toBeGreaterThan(0);
 });
 

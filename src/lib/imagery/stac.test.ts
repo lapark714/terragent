@@ -113,7 +113,7 @@ describe("searchFreeScenes", () => {
   afterEach(() => vi.unstubAllGlobals());
 
   /** Fake Planetary Computer: STAC features per window start, statistics per item id (null = HTTP 500). */
-  function stubPc(features: Record<string, unknown[]>, stats: Record<string, [number, number] | null>) {
+  function stubPc(features: Record<string, unknown[]>, stats: Record<string, [number, number] | null>, onStats?: (id: string) => void) {
     const calls: { url: string; body: Record<string, unknown> }[] = [];
     vi.stubGlobal(
       "fetch",
@@ -126,6 +126,7 @@ describe("searchFreeScenes", () => {
           return Response.json({ type: "FeatureCollection", features: features[start] ?? [] });
         }
         const id = new URL(url).searchParams.get("item")!;
+        onStats?.(id);
         const s = stats[id];
         if (!s) return new Response("boom", { status: 500 });
         return Response.json({ properties: { statistics: { clear_expr: { mean: s[0] }, B02: { median: s[1] } } } });
@@ -176,6 +177,55 @@ describe("searchFreeScenes", () => {
     const r = await searchFreeScenes({ ...query, before: null, afterPreference: "earliest" });
     expect(r.after?.item_id).toBe("mid");
     expect(r.candidates.after.map((c) => c.item_id)).toEqual(["early", "mid", "late"]);
+  });
+
+  const statsIds = (calls: { url: string }[]) => calls.filter((c) => c.url.includes("/statistics")).map((c) => new URL(c.url).searchParams.get("item"));
+
+  /** Four cloudy newest scenes, then six older ones with tile cloud 70, 5, 50, 10, 60, 20 %. */
+  function cloudySpell(clearOlder: Record<string, number>) {
+    const days = [30, 27, 24, 21, 18, 15, 12, 9, 6, 3];
+    const tileCloud = [5, 5, 5, 5, 70, 5, 50, 10, 60, 20];
+    const items = days.map((d, i) => item(`D${d}`, `2026-10-${String(d).padStart(2, "0")}T18:00:00Z`, { cloud: tileCloud[i] }));
+    const stats = Object.fromEntries(days.map((d) => [`D${d}`, [clearOlder[`D${d}`] ?? 0.3, 2000] as [number, number]]));
+    return { features: { "2026-09-01": items }, stats };
+  }
+
+  it("when the newest scenes are cloudy, measures the least cloudy older ones before settling for the clearest", async () => {
+    const pc = cloudySpell({ D15: 0.9, D9: 0.97, D18: 1 }); // D18 is clear but its tile is 70 % cloud: not measured
+    const calls = stubPc(pc.features, pc.stats);
+    const r = await searchFreeScenes({ ...query, before: null });
+    expect(statsIds(calls)).toEqual(["D30", "D27", "D24", "D21", "D15", "D9", "D3", "D12"]);
+    expect(r.after).toMatchObject({ item_id: "D15", aoi_clear_fraction: 0.9 }); // newest of the clear ones
+    expect(r.notes).toEqual(["after: D15 (2026-10-15), 90% of the AOI clear (SCL)."]);
+  });
+
+  it("stops at 8 statistics calls and reports the clearest measured", async () => {
+    const pc = cloudySpell({ D12: 0.5 });
+    const calls = stubPc(pc.features, pc.stats);
+    const r = await searchFreeScenes({ ...query, before: null });
+    expect(statsIds(calls)).toHaveLength(8);
+    expect(r.after?.item_id).toBe("D12");
+    expect(r.notes[1]).toBe("after: no scene in the window is clear enough; this is the clearest of 8 measured.");
+  });
+
+  it("skips the extra round when the first one used up the time budget", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    try {
+      const pc = cloudySpell({ D15: 0.9 });
+      const calls = stubPc(pc.features, pc.stats, () => vi.setSystemTime(Date.now() + 1_100)); // 4 slow calls: 4.4 s
+      const r = await searchFreeScenes({ ...query, before: null });
+      expect(statsIds(calls)).toHaveLength(4);
+      expect(r.after?.item_id).toBe("D30"); // clearest measured (ties keep preference order)
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("does not look further when a newest scene is clear", async () => {
+    const pc = cloudySpell({ D24: 0.9 });
+    const calls = stubPc(pc.features, pc.stats);
+    expect((await searchFreeScenes({ ...query, before: null })).after?.item_id).toBe("D24");
+    expect(statsIds(calls)).toHaveLength(4);
   });
 
   it("falls back to tile cloud cover when statistics fail", async () => {

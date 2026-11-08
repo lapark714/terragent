@@ -118,7 +118,7 @@ function Group({ title, count, className = "", children }: { title: string; coun
   );
 }
 
-export function ApprovalsPanel({ approvals: a, onChanged }: { approvals: Approvals; onChanged: () => void }) {
+export function ApprovalsPanel({ approvals: a, offline = false, onChanged }: { approvals: Approvals; offline?: boolean; onChanged: () => void }) {
   const { session, save } = useAdminSession();
   const common = { session, onDone: onChanged, onUnauthorized: () => save(null) };
   const naive = a.naive.state === "ok" ? a.naive.data : [];
@@ -130,6 +130,7 @@ export function ApprovalsPanel({ approvals: a, onChanged }: { approvals: Approva
           <h2 id="approvals-title" className="stretch-semi text-[0.95rem] font-semibold">Waiting on a founder</h2>
           <p className="mt-1 max-w-2xl text-sm text-fg-3">
             The only steps our rules reserve for people: paid data, prices above the cap, first sends, paused tool calls.
+            {offline && " Local demo mode: decisions write to the demo database only."}
           </p>
         </div>
         {session ? (
@@ -144,6 +145,7 @@ export function ApprovalsPanel({ approvals: a, onChanged }: { approvals: Approva
 
       <div className="grid gap-px md:grid-cols-2 xl:grid-cols-3">
         <Group title="Paused agent actions" count={a.naive.state === "ok" ? naive.length : null}>
+          {a.naive.state === "offline" && <Quiet>Local demo mode: Naïve isn&apos;t called, so no paused agent action shows here.</Quiet>}
           {a.naive.state === "not_configured" && <Quiet>Naïve isn&apos;t connected on this deployment.</Quiet>}
           {a.naive.state === "error" && <Quiet>Couldn&apos;t read Naïve approvals ({a.naive.message}).</Quiet>}
           {a.naive.state === "ok" && !naive.length && <Quiet>No agent is waiting for a decision.</Quiet>}
@@ -155,9 +157,13 @@ export function ApprovalsPanel({ approvals: a, onChanged }: { approvals: Approva
               </p>
               <pre className="scroll-quiet max-h-28 overflow-auto rounded bg-space p-2 font-mono text-[11px] leading-snug text-fg-2">{JSON.stringify(p.args, null, 1)}</pre>
               <Decide action="naive-approval" {...common} choices={[
-                { label: "Allow", primary: true, body: { session_id: p.sessionId, tool_call_id: p.toolCallId, decision: "allow" } },
+                // Only calls on the approvable list can be allowed from here (and never a signup or login); the server checks too.
+                ...(p.approvable ? [{ label: "Allow", primary: true, body: { session_id: p.sessionId, tool_call_id: p.toolCallId, decision: "allow" } }] : []),
                 { label: "Deny", body: { session_id: p.sessionId, tool_call_id: p.toolCallId, decision: "deny" } },
               ]} />
+              {!p.approvable && (
+                <p className="text-xs text-fg-3">Our rules never let this call be allowed from the dashboard, only denied. If it truly must run, decide it in the Naïve console.</p>
+              )}
             </div>
           ))}
         </Group>
@@ -198,8 +204,13 @@ export function ApprovalsPanel({ approvals: a, onChanged }: { approvals: Approva
               <p className="text-xs text-fg-3">
                 {q.lineItems.map((i) => `${i.label} ${usd(i.amountUsd)}`).join(" + ")}, held since {clockUtc(q.at)} UTC
               </p>
-              <Decide action="quote" {...common} choices={[{ label: "Approve quote", primary: true, body: { quote_id: q.id, decision: "approve" } }]} />
-              <p className="text-xs text-fg-3">Approving hands the quote to the customer agent, which emails it to the customer.</p>
+              <Decide action="quote" {...common} choices={[
+                { label: "Approve quote", primary: true, body: { quote_id: q.id, decision: "approve" } },
+                { label: "Reject", body: { quote_id: q.id, decision: "reject" } },
+              ]} />
+              <p className="text-xs text-fg-3">
+                Approving hands the quote to the customer agent, which emails it to the customer. Rejecting sends it back to pricing with your reason.
+              </p>
             </div>
           ))}
         </Group>

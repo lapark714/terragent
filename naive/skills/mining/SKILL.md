@@ -1,6 +1,6 @@
 ---
 name: playbook-mining
-description: Mining playbook - claim, permit and news signals, mining buyers, the indicator and change recipes, indicator-only report format, outreach message and price.
+description: Mining playbook - new-claim and news signals, mining buyers, the indicator and change recipes, indicator-only report format, outreach message and price.
 ---
 # Mining
 
@@ -11,10 +11,12 @@ does the surface show alteration minerals. This playbook delivers indicators and
 
 | Feed | What it gives | Act on |
 |---|---|---|
-| `mrds` (USGS Mineral Resources Data System) | known deposits and occurrences (historic, not updated since 2011) | context only: what is known near a site |
-| BLM mining claims (MLRS hub), when poll_signals returns them | new or active claims with created dates | clusters of new claims, new claimants |
-| `news` | junior miners announcing raises, drilling results, permits, expansions, tailings incidents | the company and site named |
-| `gfw` | forest-loss alerts near mining regions (e.g. Amazon gold) | possible illegal mining expansion |
+| `blm_claims` (BLM MLRS mining claims, free, refreshed daily) | blocks of new US claims staked in the last days: claim count, acres, name, state, case numbers, outline | big new blocks (25+ claims = a funded explorer). The claimant is not in the feed: look a case number up at mlrs.blm.gov, then find the company |
+| `mrds` (USGS Mineral Resources Data System) | known deposits and occurrences (historic, not updated since 2011) | context only: what is known near a site. It answers region queries only, so a plain poll returns a warning for it, not signals |
+| `news` (PAID: Monid news, about $0.01 per poll) | junior miners announcing raises, drilling results, permits, expansions, tailings incidents | the company and site named. poll_signals includes it by default; pass allow_paid:false to keep a sweep free |
+
+Forest-loss alerts near mining regions (e.g. Amazon gold) come from the deforestation playbook's `gfw` feed:
+terragent.list_signals({ feed: "gfw" }) if you want them as context for possible illegal mining expansion.
 
 ## Buyers (business-to-business only)
 

@@ -22,7 +22,7 @@ const { getDecisions } = await import("./decisions");
 const { getMoney } = await import("./money");
 const { getInterventions } = await import("./interventions");
 const { getAllocationHistory } = await import("./allocation");
-const { getActivity, getOverview } = await import("./overview");
+const { activityDetail, getActivity, getOverview } = await import("./overview");
 const { getGlobeData } = await import("./globe");
 const { getApprovals } = await import("./approvals");
 const { getLiveSnapshot } = await import("./snapshot");
@@ -196,11 +196,45 @@ describe("dashboard queries on a seeded database", () => {
 
     const o = await getOverview();
     expect(o).toMatchObject({ inbound: 1, samples: 2, active: 2, delivered: 1, verifiedReports: 1, indexCells: 1, interventions: 1 });
+    // pro_1 (email) and pro_2 (contact form) were reached; pro_2's blocked retry is not "held" since it was reached.
+    expect(o).toMatchObject({ reportsDelivered: 1, firstTouches: 2, touchesHeld: 0, replies: 1 });
     expect(o.medianAnswerSeconds).toBeGreaterThan(100);
     expect(o.medianAnswerSeconds).toBeLessThan(130);
 
     const activity = await getActivity();
-    expect(activity[0]).toMatchObject({ type: "status.changed", request: "req_inbo" });
+    expect(activity[0]).toMatchObject({ type: "status.changed", request: "req_inbo", playbook: "inbound", detail: { to: "delivered" } });
+  });
+
+  it("counts today's requests and held-back touches", async () => {
+    const day = await createDb({ memory: true });
+    await migrate(day);
+    setDb(day);
+    try {
+      await day.query(`INSERT INTO requests (id, source, playbook, question, is_free_sample, created_at) VALUES
+                       ('req_today1', 'portal', 'inbound', 'q', false, now()), ('req_today2', 'api', 'inbound', 'q', false, now()),
+                       ('req_old001', 'portal', 'inbound', 'q', false, now() - interval '2 days'),
+                       ('req_samp01', 'signal', 'mining', 'q', true, now()), ('req_samp02', 'signal', 'mining', 'q', true, now() - interval '3 days')`);
+      await day.query(`INSERT INTO prospects (id, playbook, company) VALUES ('pro_a', 'mining', 'A'), ('pro_b', 'mining', 'B')`);
+      await day.query(`INSERT INTO messages (id, direction, inbox, prospect_id, kind, channel, status, blocked_reason) VALUES
+                       ('m_a', 'outbound', 'outreach', 'pro_a', 'outreach', 'email_warm', 'blocked', 'provider_limit:rate_limit_exceeded'),
+                       ('m_b', 'outbound', 'outreach', 'pro_b', 'outreach', 'email_warm', 'blocked', 'inbox_not_armed'),
+                       ('m_c', 'outbound', 'outreach', 'pro_b', 'outreach', 'email_warm', 'blocked', 'inbox_not_armed')`);
+      expect(await getOverview()).toMatchObject({ inbound: 3, inboundToday: 2, samples: 2, samplesToday: 1, firstTouches: 0, touchesHeld: 2, replies: 0, reportsDelivered: 0 });
+    } finally {
+      setDb(db);
+      await day.close();
+    }
+  });
+
+  it("shows only enumerated event details in the activity feed, never payload text", () => {
+    const none = { p_to: null, p_agent: null, p_stage: null, p_kind: null, p_action: null, p_service: null };
+    expect(activityDetail("handoff", { ...none, p_to: "planner", p_stage: "planning" })).toEqual({ agent: "planner", stage: "planning" });
+    expect(activityDetail("status.changed", { ...none, p_to: "analyzing" })).toEqual({ to: "analyzing" });
+    expect(activityDetail("decision.logged", { ...none, p_kind: "free_vs_paid" })).toEqual({ kind: "free_vs_paid" });
+    expect(activityDetail("offline.skipped", { ...none, p_agent: "comms-customer", p_service: "naive", p_stage: "screening" }))
+      .toEqual({ agent: "comms-customer", service: "naive", stage: "screening" });
+    // Free text (an email's "to", a customer's words in a stage) is dropped.
+    expect(activityDetail("email.sent", { ...none, p_to: "jane@acme.com", p_stage: "Track Jane Doe", p_action: "x".repeat(80) })).toBeNull();
   });
 
   it("aggregates Earth index cells for the globe and coarsens request markers", async () => {
@@ -367,11 +401,70 @@ describe("admin actions", () => {
     const approve = () => runAdminAction({ action: "quote", quote_id: "qte_held1", decision: "approve", actor: "Laurence", reason: "Price checked" });
     expect(await approve()).toEqual({ done: "Quote approved. The customer agent is sending it now." });
     expect(await q("SELECT status FROM quotes WHERE id = 'qte_held1'")).toEqual([{ status: "approved" }]);
-    expect(await q("SELECT actor, action FROM interventions WHERE ref_id = 'qte_held1'")).toEqual([{ actor: "Laurence", action: "approve_quote" }]);
+    expect(await q("SELECT actor, action, reason FROM interventions WHERE ref_id = 'qte_held1'")).toEqual([{ actor: "Laurence", action: "approve_quote", reason: "Price checked" }]);
     expect(await q("SELECT payload->>'to' AS to FROM events WHERE request_id = 'req_quoted0001' AND type = 'handoff'")).toEqual([{ to: "comms-customer" }]);
     await expect(approve()).rejects.toBeInstanceOf(AdminConflict);
     expect(await interventionCount()).toBe(before + 1);
     expect((await getApprovals()).quotes).toEqual([]);
+  });
+
+  it("rejects a held quote with the founder's reason and sends it back to pricing", async () => {
+    vi.stubEnv("TERRAGENT_LANES", "off");
+    await q(`INSERT INTO requests (id, source, playbook, status, question, customer_email, meta) VALUES
+             ('req_quoted0002', 'portal', 'inbound', 'awaiting_approval', 'Mine expansion near Elko?', 'cy@x.com', '{"screening":{"allowed":true}}')`);
+    await q(`INSERT INTO quotes (id, request_id, price_usd, status) VALUES ('qte_held2', 'req_quoted0002', 240, 'needs_approval')`);
+    const before = await interventionCount();
+    const reject = () => runAdminAction({ action: "quote", quote_id: "qte_held2", decision: "reject", actor: "Aiden", reason: "Too dear for one site" });
+    expect(await reject()).toEqual({ done: "Quote rejected. The pricing agent is looking for a cheaper plan." });
+    expect(await q("SELECT status FROM quotes WHERE id = 'qte_held2'")).toEqual([{ status: "declined" }]);
+    expect(await q("SELECT actor, action, reason FROM interventions WHERE ref_id = 'qte_held2'")).toEqual([{ actor: "Aiden", action: "reject_quote", reason: "Too dear for one site" }]);
+    expect(await q("SELECT payload->>'to' AS to FROM events WHERE request_id = 'req_quoted0002' AND type = 'handoff'")).toEqual([{ to: "pricing" }]);
+    await expect(reject()).rejects.toBeInstanceOf(AdminConflict);
+    expect(await interventionCount()).toBe(before + 1);
+  });
+
+  it("logs the intervention before answering Naïve, and takes it back if Naïve refuses", async () => {
+    vi.stubEnv("NAIVE_API_KEY", "sk_test");
+    const before = await interventionCount();
+    let seenByNaive = -1;
+    sessions.listPendingApprovals.mockResolvedValueOnce([{ ...parkedOrder("ord_none", "tc_7"), tool: "browser", agent: "comms-outreach", approvable: true }]);
+    sessions.decideApproval.mockImplementationOnce(async () => {
+      seenByNaive = await interventionCount(); // the resumed session's tool call must find the row already there
+    });
+    await runAdminAction({ action: "naive-approval", session_id: "ses_9", tool_call_id: "tc_7", decision: "allow", actor: "Aiden", reason: "Form copy is the approved template" });
+    expect(seenByNaive).toBe(before + 1);
+    expect(await q("SELECT action, request_id FROM interventions WHERE ref_id = 'tc_7'")).toEqual([{ action: "naive_allow", request_id: null }]);
+
+    sessions.listPendingApprovals.mockResolvedValueOnce([{ ...parkedOrder("ord_none", "tc_8"), tool: "browser", agent: "comms-outreach", approvable: true }]);
+    sessions.decideApproval.mockRejectedValueOnce(new Error("Naïve is down"));
+    await expect(
+      runAdminAction({ action: "naive-approval", session_id: "ses_9", tool_call_id: "tc_8", decision: "deny", actor: "Aiden", reason: "Not this one" }),
+    ).rejects.toThrow("Naïve is down");
+    expect(await q("SELECT 1 FROM interventions WHERE ref_id = 'tc_8'")).toEqual([]);
+    expect(await q("SELECT actor FROM events WHERE type = 'human.intervention_undone' AND payload->>'ref_id' = 'tc_8'")).toEqual([{ actor: "human:Aiden" }]);
+    expect(await interventionCount()).toBe(before + 1);
+  });
+
+  it("only lets a founder deny a call that is not on the approvable list", async () => {
+    vi.stubEnv("NAIVE_API_KEY", "sk_test");
+    const before = await interventionCount();
+    const signup = { ...parkedOrder("ord_none", "tc_9"), tool: "browser", agent: "comms-outreach", args: { action: "signup" }, approvable: false };
+    sessions.listPendingApprovals.mockResolvedValueOnce([signup]);
+    sessions.decideApproval.mockClear();
+    await expect(
+      runAdminAction({ action: "naive-approval", session_id: "ses_9", tool_call_id: "tc_9", decision: "allow", actor: "Aiden", reason: "Looks fine" }),
+    ).rejects.toBeInstanceOf(AdminConflict);
+    expect(sessions.decideApproval).not.toHaveBeenCalled();
+    expect(await interventionCount()).toBe(before);
+
+    sessions.listPendingApprovals.mockResolvedValueOnce([signup]);
+    await runAdminAction({ action: "naive-approval", session_id: "ses_9", tool_call_id: "tc_9", decision: "deny", actor: "Aiden", reason: "Agents never sign up" });
+    expect(sessions.decideApproval).toHaveBeenLastCalledWith("ses_9", "tc_9", "deny", "Agents never sign up");
+    expect(await interventionCount()).toBe(before + 1);
+
+    sessions.listPendingApprovals.mockResolvedValueOnce([signup]);
+    const ap = await getApprovals();
+    if (ap.naive.state === "ok") expect(ap.naive.data[0].approvable).toBe(false);
   });
 
   it("approves templates once", async () => {

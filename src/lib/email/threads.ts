@@ -7,6 +7,7 @@ import { inboxAddress, isOwnAddress, roleForAddress } from "../agentmail/config"
 import { mailApi } from "../agentmail/client";
 import { getDb } from "../db/client";
 import type { Inbox } from "../domain";
+import { isOffline } from "../env";
 import { parseAddress } from "./address";
 import { bodyText, fromSdkMessage, type InboundAttachment } from "./inbound-parse";
 import { recordVerdict } from "./security";
@@ -65,8 +66,9 @@ function finalVerdict(v: string | null | undefined): ThreadMessage["security_ver
   return v === "clear" || v === "review" || v === "unavailable" ? v : null;
 }
 
-/** null when AgentMail isn't configured or doesn't know the thread. */
+/** null when AgentMail isn't configured, doesn't know the thread, or we're offline. */
 async function fetchThread(threadId: string): Promise<ThreadView | null> {
+  if (isOffline()) return null; // local demo database: stored messages only
   let thread: AgentMail.Thread;
   try {
     thread = await mailApi().getThread(threadId);

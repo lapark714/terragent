@@ -8,8 +8,9 @@ import { saveDataSpec } from "../../pipeline/specs";
 import type { ToolRegistrar } from "../types";
 
 export function register(r: ToolRegistrar): void {
-  r.tool("geocode", { text: z.string().min(2).max(500).describe("address or place name") }, async ({ text }) => {
-    const hit = await geocode(text);
+  r.tool("geocode", { text: z.string().min(2).max(500).describe("address or place name") }, async ({ text }, ctx) => {
+    // Sourcing runs on cron: Nominatim's policy puts scheduled callers in a slower lane (4/min), see geocode.ts.
+    const hit = await geocode(text, { periodic: ctx.agent === "sourcing" });
     return hit ?? { error: `No match for "${text}". Try a simpler place name, or ask the customer.` };
   });
 

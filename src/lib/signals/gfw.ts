@@ -1,7 +1,8 @@
 /**
  * Global Forest Watch integrated deforestation alerts (GLAD-L + GLAD-S2 + RADD, ~10 m, 30°N-30°S).
- * With GFW_API_KEY: /query/json with x-api-key. Without: the keyless /download/json route (verified live
- * 2026-11-07, best-effort; it may be locked down). Every request sends `origin: <our host>`, since keys are
+ * With GFW_API_KEY: /query/json with x-api-key. Without (the default): the keyless /download/json route, POST
+ * {sql, geometry}; `latest` answers 307 → the current vYYYYMMDD and fetch re-sends the POST (re-verified live
+ * 2026-11-07; best-effort, it may be locked down). Every request sends `origin: <our host>`, since keys are
  * bound to an origin allowlist (localhost, *.vercel.app).
  * High/highest-confidence pixels are clustered into one signal per clearing front.
  */

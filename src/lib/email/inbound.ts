@@ -2,7 +2,9 @@
  * Inbound email routing (webhook and dev poller share this). Every message is stored once, then routed:
  *   supplier order thread (data@)        → board card for comms-suppliers (background lane)
  *   thread of an open request            → handoff to comms-customer
- *   thread of a finished request         → follow-up request (meta.follows) for comms-customer; refused → note only
+ *   thread of a finished request         → follow-up request (meta.follows) for comms-customer
+ *   thread of a refused request          → follow-up request re-screened by comms-customer (the refusal invites more
+ *                                          detail); at most MAX_RESCREENS_PER_THREAD per thread, then note only
  *   reply from an outreach prospect      → prospect "replied" (warm) + request for comms-customer
  *   anything else on hello@ / outreach@  → new inbound request, screened by comms-customer
  * Guards first: our own addresses, auto-replies, opt-outs, > 5 messages/hour from one sender.
@@ -36,6 +38,8 @@ type ThreadMatch = Extract<Route, { kind: "supplier" | "request" | "prospect" }>
 export interface InboundOutcome { route: Route; messageRowId?: string; requestId?: string | null }
 
 export const MAX_INBOUND_PER_SENDER_PER_HOUR = 5;
+/** Replies to a refusal that get a fresh screen, per thread; later ones are noted only (no new agent run). */
+export const MAX_RESCREENS_PER_THREAD = 2;
 const SYSTEM = "system";
 const TERMINAL = [...TERMINAL_STATUSES];
 
@@ -250,15 +254,11 @@ const SCREENING =
   "if key details are missing, send_customer_message kind clarifying_question; if refused, send_customer_message kind refusal.";
 
 const OPT_OUT_NOTE =
-  "The reply mentions unsubscribing or opting out. If they want no more email at all, reply once to confirm and cancel the " +
-  "request with set_status; if they mean marketing only, carry on with this request.";
+  "The reply mentions unsubscribing or opting out. If they want no more email at all, call record_opt_out (it suppresses " +
+  "the address and cancels the request) and send nothing more; if they mean marketing only, carry on with this request.";
 
 async function continueRequest(m: InboundEmail, inbox: Inbox, route: Extract<Route, { kind: "request" }>, messageRowId: string): Promise<string> {
-  if (route.status === "refused") {
-    await flagIfUntrusted(route.requestId, messageRowId, m.messageId);
-    await addNote(route.requestId, SYSTEM, `Reply received after the refusal (message ${m.messageId}); not handed off.`);
-    return route.requestId;
-  }
+  if (route.status === "refused") return rescreenAfterRefusal(m, inbox, route, messageRowId);
   if (TERMINAL_STATUSES.has(route.status)) {
     // A finished request can't be handed off: the reply (often about payment or the report) starts a follow-up.
     const db = await getDb();
@@ -278,6 +278,46 @@ async function continueRequest(m: InboundEmail, inbox: Inbox, route: Extract<Rou
   return toComms2(m, inbox, route.requestId, messageRowId, "customer_reply", optOut ? OPT_OUT_NOTE : "");
 }
 
+/**
+ * Our refusal asks the customer to reply with more detail if we misunderstood, so a reply gets a fresh screen: a new
+ * request on the same thread (a refused one can't be handed off), whose question carries the reply and the refused ask.
+ * Loop guards: the planRoute guards (auto-replies, own addresses, 5/hour per sender) and MAX_RESCREENS_PER_THREAD.
+ * A reply that is nothing but an opt-out is honoured here, without a re-screen.
+ */
+async function rescreenAfterRefusal(m: InboundEmail, inbox: Inbox, route: Extract<Route, { kind: "request" }>, messageRowId: string): Promise<string> {
+  // A bare "STOP" / "unsubscribe" answer needs no agent run: after a refusal there is no order it could be about.
+  if (isOptOutCommand(m.replyText)) {
+    const sender = parseAddress(m.from).email;
+    await suppress(sender, "opt_out", SYSTEM);
+    await addNote(route.requestId, SYSTEM, `Opted out by reply ${m.messageId} after the refusal; nothing more is sent to ${sender}.`);
+    await logEvent("email.opted_out", SYSTEM, { inbox, from: sender, message_id: m.messageId, thread_id: m.threadId }, route.requestId);
+    return route.requestId;
+  }
+  const db = await getDb();
+  const [{ n }] = await db.query<{ n: number }>(
+    "SELECT count(*)::int AS n FROM requests WHERE thread_id = $1 AND meta->>'origin' = 'refusal_reply'", [m.threadId]);
+  if (n >= MAX_RESCREENS_PER_THREAD) {
+    await flagIfUntrusted(route.requestId, messageRowId, m.messageId);
+    await addNote(route.requestId, SYSTEM,
+      `Reply received after the refusal (message ${m.messageId}); this thread already had ${n} re-screens, so it was not handed off.`);
+    await logEvent("email.rescreen_limit", SYSTEM, { inbox, message_id: m.messageId, thread_id: m.threadId, rescreens: n }, route.requestId);
+    return route.requestId;
+  }
+  const [prev] = await db.query<{ company: string | null; prospect_id: string | null; playbook: string; question: string }>(
+    "SELECT company, prospect_id, playbook, question FROM requests WHERE id = $1", [route.requestId]);
+  const reply = questionFrom(m);
+  const question = prev ? `${reply}\n\nEarlier in this thread (refused at screening): ${prev.question}` : reply;
+  const req = await newRequest(m, inbox, {
+    company: prev?.company ?? undefined, prospectId: prev?.prospect_id ?? undefined, playbook: prev?.playbook,
+    question, meta: { follows: route.requestId, origin: "refusal_reply" },
+  });
+  const optOut = isOptOutReply(m.replyText) ? ` ${OPT_OUT_NOTE}` : "";
+  return toComms2(m, inbox, req, messageRowId, "screening",
+    `This reply answers our refusal of request ${route.requestId} in the same thread, so it opened this request for a fresh screen ` +
+    `(re-screen ${n + 1} of ${MAX_RESCREENS_PER_THREAD}). Judge the whole ask, the earlier message and the new detail together: ` +
+    `new wording alone doesn't make a refused purpose acceptable. ${SCREENING}${optOut}`);
+}
+
 async function continueProspect(m: InboundEmail, inbox: Inbox, route: Extract<Route, { kind: "prospect" }>, messageRowId: string): Promise<string> {
   const db = await getDb();
   await db.query(
@@ -294,10 +334,12 @@ async function continueProspect(m: InboundEmail, inbox: Inbox, route: Extract<Ro
     `This is a reply from outreach prospect ${route.prospectId} (${route.company}), who got a free sample report: answer, quote and sell as for any customer.`);
 }
 
-async function newRequest(m: InboundEmail, inbox: Inbox, o: { company?: string; playbook?: string; prospectId?: string; meta: Record<string, unknown> }): Promise<string> {
+async function newRequest(
+  m: InboundEmail, inbox: Inbox, o: { company?: string; playbook?: string; prospectId?: string; question?: string; meta: Record<string, unknown> },
+): Promise<string> {
   const sender = parseAddress(m.from);
   const req = await createRequest({
-    source: "email", question: questionFrom(m), email: sender.email, name: sender.name?.slice(0, 200), company: o.company,
+    source: "email", question: (o.question ?? questionFrom(m)).slice(0, 2000), email: sender.email, name: sender.name?.slice(0, 200), company: o.company,
     playbook: o.playbook, priority: "inbound", threadId: m.threadId, inbox, prospectId: o.prospectId, meta: o.meta, actor: SYSTEM,
   });
   return req.id;

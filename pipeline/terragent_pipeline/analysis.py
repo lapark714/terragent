@@ -8,6 +8,7 @@ from collections.abc import Iterator
 from typing import Any
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
+from dataclasses import dataclass, field
 from pathlib import Path
 
 from . import render
@@ -23,26 +24,46 @@ class Timer:
     def __init__(self) -> None:
         self.start = time.perf_counter()
         self.steps: dict[str, float] = {}
+        self.current: str | None = None  # the step running now (read from another thread at the job deadline)
+        self._current_t0 = 0.0
 
     @contextmanager
     def __call__(self, name: str) -> Iterator[None]:
         t0 = time.perf_counter()
+        self.current, self._current_t0 = name, t0
         try:
             yield
         finally:
+            self.current = None
             self.steps[name] = round(self.steps.get(name, 0.0) + time.perf_counter() - t0, 3)
 
     def report(self) -> dict[str, float]:
-        return {**self.steps, "total": round(time.perf_counter() - self.start, 3)}
+        """Finished steps, the running one so far (if any), and the total."""
+        steps, current = dict(self.steps), self.current
+        if current is not None:
+            steps[current] = round(steps.get(current, 0.0) + time.perf_counter() - self._current_t0, 3)
+        return {**steps, "total": round(time.perf_counter() - self.start, 3)}
+
+
+@dataclass
+class Progress:
+    """What a running job has found so far, so the CLI can still answer when the job deadline cuts it short."""
+
+    timer: Timer = field(default_factory=Timer)
+    warnings: list[str] = field(default_factory=list)
+    after_id: str | None = None
+    before_id: str | None = None
 
 
 def log(msg: str) -> None:
     print(f"[pipeline] {msg}", file=sys.stderr, flush=True)
 
 
-def analyse(job: Job, out: Path) -> dict:
-    """AnalysisResult (src/lib/domain.ts) for the job; images are written into `out`, paths relative to it."""
-    timer, warnings = Timer(), []
+def analyse(job: Job, out: Path, progress: Progress | None = None) -> dict:
+    """AnalysisResult (src/lib/domain.ts) for the job; images are written into `out`, paths relative to it.
+    `progress` is updated as the job goes (see Progress)."""
+    progress = progress or Progress()
+    timer, warnings = progress.timer, progress.warnings
     spec = RECIPE_SPECS[job.recipe]
     sensor = SENSORS[job.collection]
 
@@ -57,6 +78,7 @@ def analyse(job: Job, out: Path) -> dict:
     warnings += notes
     if after_pick is None:
         return _result(job, None, None, Outcome(), [], [], timer, warnings)
+    progress.after_id = after_pick.item["id"]
     log(f"after: {after_pick.item['id']} (screened clear {after_pick.screened_clear})")
 
     before_pick = None
@@ -67,6 +89,7 @@ def analyse(job: Job, out: Path) -> dict:
             )
         warnings += notes
         if before_pick:
+            progress.before_id = before_pick.item["id"]
             log(f"before: {before_pick.item['id']} (screened clear {before_pick.screened_clear})")
     if spec.compare and before_pick is None:
         warnings.append("No before scene, so there are no before/after comparison metrics; only the after scene is reported.")
@@ -87,6 +110,24 @@ def analyse(job: Job, out: Path) -> dict:
     with timer("h3"):
         cells = h3_metrics(grid, outcome.layers, job.h3_res)
     return _result(job, after, before, outcome, photos, cells, timer, warnings)
+
+
+def deadline_result(job: Job, progress: Progress, deadline_s: float) -> Any:
+    """AnalysisResult for a job the deadline cut short: no measurements, a warning that says so and how to retry."""
+    step = progress.timer.current or "setup"
+    chosen = [f"{label} scene {item_id}" for label, item_id in (("after", progress.after_id), ("before", progress.before_id)) if item_id]
+    retry = (
+        f" The {' and '.join(chosen)} had been chosen: pass them as after_scene / before_scene to skip the search on a retry."
+        if chosen
+        else ""
+    )
+    warning = (
+        f"Stopped at the {deadline_s:g} s job deadline during the '{step}' step: Planetary Computer was too slow or "
+        f"unreachable, so this result has no measurements or images. Retry in a few minutes.{retry}"
+    )
+    result = _result(job, None, None, Outcome(), [], [], progress.timer, [*progress.warnings, warning])
+    result["timings_s"]["deadline_s"] = deadline_s
+    return result
 
 
 def _coverage_warnings(job: Job, after: tuple[Pick, Scene], before: tuple[Pick | None, Scene | None]) -> list[str]:

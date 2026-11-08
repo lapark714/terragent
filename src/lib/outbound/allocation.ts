@@ -5,7 +5,6 @@
 import { CAPS, DEFAULT_ALLOCATION } from "../config";
 import { getDb } from "../db/client";
 import { PlaybookAllocation } from "../domain";
-import { envNumber } from "../env";
 import { logDecision } from "../events";
 import { SETTING, setSetting } from "../settings";
 import { fail } from "./errors";
@@ -79,17 +78,19 @@ export async function setPlaybookAllocation(a: { input: unknown; measured: Recor
 
 /** A playbook's sweep fires at most every 2 h (naive/deployments.ts), so samples started in the last hour belong to this run. */
 export const SAMPLE_RUN_WINDOW_MINUTES = 60;
-/** Daily ceiling across a playbook's runs, before its weight (keeps pipeline spend inside the agents' daily budgets). */
-export const FREE_SAMPLES_PER_DAY = envNumber("CAP_FREE_SAMPLES_PER_DAY", 40);
 
 export interface SampleCap {
   playbook: OutboundPlaybook;
   weight: number;
   limit_per_run: number;
   started_this_run: number;
+  /** This playbook's share of the day: CAPS.freeSamplesPerDay × weight, rounded up. */
   limit_today: number;
   started_today: number;
-  /** What this run may still start: the smaller of the run and day room. */
+  /** CAPS.freeSamplesPerDay itself: rounding the shares up must not let the playbooks together exceed it. */
+  limit_today_total: number;
+  started_today_total: number;
+  /** What this run may still start: the smallest of the run, playbook-day and all-playbooks-day room. */
   remaining: number;
 }
 
@@ -97,15 +98,18 @@ export interface SampleCap {
 const share = (n: number, w: number) => (w > 0 ? Math.max(1, Math.ceil(n * w - 1e-9)) : 0);
 
 /**
- * Free samples a playbook may still start: CAPS.freeSamplesPerRun × weight per run (as the sourcing prompt says)
- * and FREE_SAMPLES_PER_DAY × weight per UTC day.
+ * Free samples a playbook may still start: CAPS.freeSamplesPerRun × weight per run (as the sourcing prompt says),
+ * CAPS.freeSamplesPerDay × weight per UTC day, and CAPS.freeSamplesPerDay per UTC day across all playbooks
+ * (sized to keep the pipeline agents' daily budgets free for inbound work).
  */
 export async function sampleCap(playbook: OutboundPlaybook, weights?: Weights): Promise<SampleCap> {
   const weight = (weights ?? (await getAllocation()).weights)[playbook] ?? 0;
   const db = await getDb();
-  const [row] = await db.query<{ run: number; today: number }>(
-    `SELECT count(*) FILTER (WHERE created_at >= $2)::int AS run, count(*) FILTER (WHERE created_at >= $3)::int AS today
-     FROM requests WHERE is_free_sample AND source = 'signal' AND playbook = $1 AND created_at >= least($2::timestamptz, $3::timestamptz)`,
+  const [row] = await db.query<{ run: number; today: number; today_total: number }>(
+    `SELECT count(*) FILTER (WHERE playbook = $1 AND created_at >= $2)::int AS run,
+            count(*) FILTER (WHERE playbook = $1 AND created_at >= $3)::int AS today,
+            count(*) FILTER (WHERE created_at >= $3)::int AS today_total
+     FROM requests WHERE is_free_sample AND source = 'signal' AND created_at >= least($2::timestamptz, $3::timestamptz)`,
     [playbook, new Date(Date.now() - SAMPLE_RUN_WINDOW_MINUTES * 60_000), startOfUtcDay()],
   );
   const cap = {
@@ -113,18 +117,38 @@ export async function sampleCap(playbook: OutboundPlaybook, weights?: Weights): 
     weight,
     limit_per_run: share(CAPS.freeSamplesPerRun, weight),
     started_this_run: num(row?.run),
-    limit_today: share(FREE_SAMPLES_PER_DAY, weight),
+    limit_today: share(CAPS.freeSamplesPerDay, weight),
     started_today: num(row?.today),
+    limit_today_total: CAPS.freeSamplesPerDay,
+    started_today_total: num(row?.today_total),
   };
-  return { ...cap, remaining: Math.max(0, Math.min(cap.limit_per_run - cap.started_this_run, cap.limit_today - cap.started_today)) };
+  const room = Math.min(
+    cap.limit_per_run - cap.started_this_run,
+    cap.limit_today - cap.started_today,
+    cap.limit_today_total - cap.started_today_total,
+  );
+  return { ...cap, remaining: Math.max(0, room) };
+}
+
+/** The cap after one more sample started (what request_free_sample reports back). */
+export function withOneStarted(c: SampleCap): SampleCap {
+  return {
+    ...c,
+    started_this_run: c.started_this_run + 1,
+    started_today: c.started_today + 1,
+    started_today_total: c.started_today_total + 1,
+    remaining: Math.max(0, c.remaining - 1),
+  };
 }
 
 /** Why no further sample may start, for the agent. */
 export function capReachedMessage(c: SampleCap): string {
   const why = c.weight === 0
     ? "its weight is 0"
-    : c.started_today >= c.limit_today
-      ? `${c.started_today}/${c.limit_today} today`
-      : `${c.started_this_run}/${c.limit_per_run} this run (last ${SAMPLE_RUN_WINDOW_MINUTES} min)`;
+    : c.started_today_total >= c.limit_today_total
+      ? `${c.started_today_total}/${c.limit_today_total} today across all playbooks`
+      : c.started_today >= c.limit_today
+        ? `${c.started_today}/${c.limit_today} today`
+        : `${c.started_this_run}/${c.limit_per_run} this run (last ${SAMPLE_RUN_WINDOW_MINUTES} min)`;
   return `free-sample cap reached for ${c.playbook}: ${why} at weight ${c.weight}. Pick only the best prospects; the coordinator sets the weights.`;
 }

@@ -3,7 +3,7 @@ import type { Db } from "../db/client";
 import { seedTemplates, TEMPLATE_SEEDS } from "./template-library";
 import {
   AI_DISCLOSURE, ensureCompliance, fillTemplate, HUMAN_REVIEW_NOTE, renderClarifyingQuestion, renderFollowup, renderOutreach,
-  renderQuote, renderRefusal, renderReportDelivery, renderSupplierQuoteRequest, TemplateError, type ReportForEmail,
+  renderCustomerUpdate, renderQuote, renderRefusal, renderReportDelivery, renderSupplierQuoteRequest, TemplateError, type ReportForEmail,
 } from "./templates";
 import { memoryDb } from "./testing";
 
@@ -118,6 +118,28 @@ describe("customer and supplier emails", () => {
     expect(emails[0].text).toContain('reply "yes"');
     expect(emails[3].subject).toContain("ord_1");
     expect(emails[3].text).toContain("4 km²");
+  });
+
+  it("a monitoring update carries the change, the earlier report and the disclosure, with no opt-out", () => {
+    const e = renderCustomerUpdate({
+      customerName: "Pat", question: "Is the vineyard recovering?", update: "NDVI rose from 0.41 to 0.52 since Oct 3 (clear scene Nov 6).",
+      reportUrl: "https://terragent.test/r/abc", monitoring: true,
+    });
+    expect(e.subject).toBe("Monitoring update from Terragent");
+    for (const part of ["Hi Pat,", '"Is the vineyard recovering?"', "NDVI rose from 0.41 to 0.52", "Your earlier report: https://terragent.test/r/abc",
+      "keep watching", AI_DISCLOSURE]) {
+      expect(e.text).toContain(part);
+    }
+    expect(e.html).toContain('<a href="https://terragent.test/r/abc"');
+    expect(e.text).not.toContain("Opt out");
+  });
+
+  it("a status update without a report has no report line and no monitoring promise", () => {
+    const e = renderCustomerUpdate({ question: "Did it flood?", update: "The latest pass was cloudy; we're waiting for the next clear one." });
+    expect(e.subject).toBe("An update on your Terragent request");
+    expect(e.text).toContain("Hi there,");
+    expect(e.text).toContain("waiting for the next clear one");
+    expect(e.text).not.toMatch(/earlier report|keep watching/);
   });
 });
 

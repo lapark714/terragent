@@ -6,7 +6,7 @@ import { freshDb, reset } from "./testing";
 
 const pollFeed = vi.hoisted(() => vi.fn());
 vi.mock("../signals", () => ({
-  FEEDS_BY_PLAYBOOK: { disasters: ["nws", "usgs_quake"], deforestation: ["gfw", "firms"], mining: ["mrds", "news"] },
+  FEEDS_BY_PLAYBOOK: { disasters: ["nws", "usgs_quake"], deforestation: ["gfw", "firms"], mining: ["blm_claims", "mrds", "news"] },
   pollFeed,
 }));
 
@@ -26,8 +26,9 @@ beforeEach(async () => {
 
 describe("pollSignals", () => {
   it("stores new signals once (dedupe on feed + external_id) and returns only new ones", async () => {
+    // Like the real pollFeed, warnings arrive already prefixed with the feed; they must not be prefixed twice.
     pollFeed.mockImplementation(async (feed: string) =>
-      feed === "nws" ? { signals: [signal(), signal({ external_id: "urn:2", title: "Flash Flood" })], warnings: [] } : { signals: [], warnings: ["no key"] },
+      feed === "nws" ? { signals: [signal(), signal({ external_id: "urn:2", title: "Flash Flood" })], warnings: [] } : { signals: [], warnings: [`${feed}: no key`] },
     );
     const first = await pollSignals({ playbook: "disasters", actor: "sourcing" });
     expect(first.new_count).toBe(2);
@@ -49,6 +50,7 @@ describe("pollSignals", () => {
     expect(pollFeed).toHaveBeenCalledWith("gfw", expect.objectContaining({ playbook: "deforestation" }));
     await pollSignals({ playbook: "mining", allowPaid: false, limitPerFeed: 10, actor: "sourcing" });
     expect(pollFeed).toHaveBeenCalledWith("news", expect.objectContaining({ playbook: "mining", allowPaid: false, limit: 10 }));
+    expect(pollFeed).toHaveBeenCalledWith("blm_claims", expect.objectContaining({ playbook: "mining", limit: 10, since: undefined }));
   });
 
   it("skips invalid rows and survives a feed that throws", async () => {

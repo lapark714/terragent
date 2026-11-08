@@ -98,14 +98,38 @@ export const DECISION_LABEL: Record<DecisionKind, string> = {
 const EVENT_LABEL: Record<string, string> = {
   "request.created": "Request received",
   "status.changed": "Moved to the next step",
+  handoff: "Handed off",
   "decision.logged": "Logged a decision",
   "human.intervention": "A founder stepped in",
+  "human.intervention_undone": "A founder's action was rolled back",
   "email.sent": "Sent an email",
   "email.received": "Received an email",
+  "email.blocked": "Held an email at our gate",
+  "email.blocked_by_provider": "Email refused by the provider",
+  "data_spec.saved": "Wrote the data spec",
+  "acquisition_plan.saved": "Chose the data",
   "report.saved": "Wrote the report",
+  "report.drafted": "Drafted the report",
   "report.verified": "Report verified",
   "analysis.saved": "Finished the analysis",
+  "quote.created": "Priced a quote",
+  "quote.sent": "Sent a quote",
+  "quote.accepted": "Quote accepted",
+  "order.prepared": "Held a paid order for a founder",
+  "order.approved": "Paid order approved",
+  "order.rejected": "Paid order rejected",
+  "supplier_quote.requested": "Asked a supplier for a price",
+  "customer_message.sent": "Wrote to the customer",
+  "signals.polled": "Polled the signal feeds",
+  "prospect.created": "Matched a business",
+  "prospect.sample_requested": "Started a free sample",
+  "prospect.replied": "A business replied",
+  "monitor.followup": "Followed up with new imagery",
+  "offline.skipped": "Skipped a call (local mode)",
 };
+
+/** Services named in events (offline.skipped, spend). */
+export const SERVICE_LABEL: Record<string, string> = { naive: "Naïve", agentmail: "AgentMail", monid: "Monid", neon: "Neon" };
 
 /** "data_spec.saved" → "Data spec saved" when no friendlier label exists. */
 export function eventLabel(type: string): string {

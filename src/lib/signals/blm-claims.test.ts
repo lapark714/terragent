@@ -18,8 +18,7 @@ describe("blm_claims", () => {
     expect(q.get("where")).toBe("Created >= DATE '2026-11-04'");
     expect(q.get("outSR")).toBe("4326");
 
-    // Once "blm_claims" is in SIGNAL_FEEDS these are plain SignalInputs.
-    for (const s of signals) expect(SignalInput.safeParse({ ...s, feed: "mrds" }).success).toBe(true);
+    for (const s of signals) expect(SignalInput.safeParse(s).success).toBe(true);
     expect(signals.map((s) => s.raw.claims)).toEqual([...signals.map((s) => s.raw.claims as number)].sort((a, b) => b - a));
 
     const roc = signals.filter((s) => (s.raw.name_stems as string[]).includes("ROC"));

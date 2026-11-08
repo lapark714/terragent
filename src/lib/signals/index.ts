@@ -3,6 +3,7 @@
  * One file per feed; this module dispatches, validates, dedupes, ranks and turns feed errors into warnings.
  */
 import { SignalInput, type Playbook, type SignalFeed } from "../domain";
+import { fetchBlmClaims } from "./blm-claims";
 import { carryForwardIds, CLUSTERED_FEEDS } from "./continuity";
 import { fetchFirms } from "./firms";
 import { fetchGfw } from "./gfw";
@@ -21,8 +22,9 @@ export { FOREST_WATCH_REGIONS } from "./regions";
 export const FEEDS_BY_PLAYBOOK: Record<Exclude<Playbook, "inbound">, SignalFeed[]> = {
   disasters: ["nws", "usgs_quake", "nwps_flood", "firms", "openfema"],
   deforestation: ["gfw", "firms"],
-  // mrds needs a bbox and news needs allowPaid, so a plain poll finds nothing until blm_claims is registered.
-  mining: ["mrds", "news"],
+  // blm_claims is the "what's new" feed (free, no key). mrds answers only region queries (bbox) and news is the
+  // paid Monid feed (allowPaid), so a plain free poll gets its mining signals from blm_claims.
+  mining: ["blm_claims", "mrds", "news"],
 };
 
 const FETCHERS: Record<SignalFeed, FeedFetcher> = {
@@ -34,6 +36,7 @@ const FETCHERS: Record<SignalFeed, FeedFetcher> = {
   gfw: fetchGfw,
   mrds: fetchMrds,
   news: fetchNews,
+  blm_claims: fetchBlmClaims,
 };
 
 export const DEFAULT_LIMIT = 50;

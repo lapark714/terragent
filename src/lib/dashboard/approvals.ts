@@ -44,6 +44,8 @@ export async function getApprovals(): Promise<Approvals> {
         tool: a.tool,
         args: scrubValue(a.args),
         parkedAt: isoOrNull(a.parked_at),
+        // Not on the approvable list (or a signup/login): the panel offers Deny only, and the server refuses Allow.
+        approvable: a.approvable !== false,
       })),
     ),
   ]);

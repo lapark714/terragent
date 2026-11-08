@@ -1,5 +1,5 @@
 import { CAPS } from "../../src/lib/config";
-import { PIPELINE_FINISH, PIPELINE_RULES, PIPELINE_START, systemPrompt } from "./prompt";
+import { PIPELINE_RULES, PIPELINE_START, systemPrompt } from "./prompt";
 import { MEMBER, SKILL_READER, WEB } from "./tools";
 import type { AgentDefinition } from "./types";
 
@@ -25,9 +25,14 @@ export const commsOutreach: AgentDefinition = {
       "Channel contact_form: open the business's own website contact page with the browser (the URL from the context, or find it on their own domain with web_search). " +
         "Fill it in as Terragent with the reply address from the context and submit once. Skip, without submitting, if there is a CAPTCHA, the form says no solicitations or sales, " +
         "it needs an account or login, or it is not clearly the business's own site. Then terragent.record_contact_form_touch (sent, or skipped with the reason).",
-      "Channel email_warm or email_direct: terragent.send_outreach_email. If it is blocked (template not approved, inbox not armed, suppressed, cap reached), stop and record the reason; never work around it.",
+      "Channel email_warm or email_direct: terragent.send_outreach_email. A result with status blocked means nothing went out; read blocked_reason:\n" +
+        "   - provider_limit:<code> or provider_rejected:<code>: AgentMail refused the send (a sending limit such as the new-org recipient ramp, a block list, a suspension); " +
+        "provider_limit:cooldown is our own pause on first-touch email after such a refusal. It is about volume, not this business: terragent.log_decision kind outreach " +
+        "with the reason, don't retry the send, and don't reach the same person through another channel (e.g. their contact form) the same day. Move on to the next prospect; " +
+        "contact-form prospects can still be touched while email is paused.\n" +
+        "   - anything else (template not approved, inbox not armed, suppressed, cap reached): stop and record the reason; never work around it.",
       "Follow-ups: terragent.list_followups returns only prospects with NEW information (a new clear image, a detected change). Send one message about that new information; never a reminder.",
-      "terragent.set_status delivered on the sample request after the touch (or with the skip reason).",
+      "After the touch (sent, blocked or skipped), terragent.add_note on the sample request saying what happened. Don't set_status delivered: the server refuses it, the touch tools record the outcome.",
     ],
     rules: [
       "Businesses only, work contacts only. Never contact individual homeowners or consumers.",
@@ -39,6 +44,10 @@ export const commsOutreach: AgentDefinition = {
       "Comply with CAN-SPAM and EU B2B norms: real sender identity, relevant offer, working opt-out.",
       ...PIPELINE_RULES,
     ],
-    finish: PIPELINE_FINISH + " A follow-up run without a request ends with terragent.log_decision kind outreach listing who was contacted and why.",
+    finish:
+      "End every run with the touch recorded (terragent.send_outreach_email or terragent.record_contact_form_touch: sent, blocked or skipped) and " +
+      "terragent.add_note on the sample request. Use terragent.handoff only to pass a request on, and terragent.set_status only for a non-finishing " +
+      "status: delivered, refused, cancelled and failed come from other tools or the coordinator. A follow-up run without a request ends with " +
+      "terragent.log_decision kind outreach listing who was contacted, who was blocked and why.",
   }),
 };

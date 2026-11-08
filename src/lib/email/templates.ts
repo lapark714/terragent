@@ -228,6 +228,20 @@ export function renderRefusal(a: { customerName?: string | null; reason: string 
   ]);
 }
 
+/**
+ * A status update or monitoring follow-up that carries no new report: what changed, in the agent's words, plus a
+ * link to the earlier report when there is one. Monitoring updates say we keep watching.
+ */
+export function renderCustomerUpdate(a: { customerName?: string | null; question: string; update: string; reportUrl?: string | null; monitoring?: boolean }): RenderedEmail {
+  return compose(a.monitoring ? "Monitoring update from Terragent" : "An update on your Terragent request", [
+    greeting(a.customerName),
+    a.monitoring ? `We re-checked the site you asked us to watch: "${a.question.trim()}"` : `An update on your request: "${a.question.trim()}"`,
+    a.update.trim(),
+    a.reportUrl ? `Your earlier report: ${a.reportUrl}` : "",
+    a.monitoring ? "We'll keep watching and write again when something changes." : "",
+  ]);
+}
+
 // ---------------------------------------------------------------------------
 // Suppliers (data@)
 // ---------------------------------------------------------------------------

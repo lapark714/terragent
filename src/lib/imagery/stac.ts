@@ -2,8 +2,8 @@
  * OWNER: imagery builder. Free scene search on Microsoft Planetary Computer (TypeScript, no Python).
  *
  * STAC search (anonymous POST) → one item per date and tile, footprints that cover the AOI first → AOI clear
- * fraction and haze check for the newest few from the data API (TiTiler) statistics on SCL + B02 → best
- * before/after. Verified endpoints and traps: docs/platform/imagery.md §3.1, §3.8, §3.14. The Python
+ * fraction and haze check for the newest few from the data API (TiTiler) statistics on SCL + B02 (and, when none
+ * of them is clear enough, the least cloudy few of the older ones, inside a time budget) → best before/after. Verified endpoints and traps: docs/platform/imagery.md §3.1, §3.8, §3.14. The Python
  * pipeline (pipeline/terragent_pipeline/scenes.py) applies the same rules at full resolution.
  */
 import type { BBox, DateRange, SceneRef } from "../domain";
@@ -12,6 +12,9 @@ const STAC_URL = "https://planetarycomputer.microsoft.com/api/stac/v1";
 const DATA_URL = "https://planetarycomputer.microsoft.com/api/data/v1";
 
 const SCREEN_PER_WINDOW = 4; // newest candidates whose AOI we measure (stats calls run in parallel)
+const EXTRA_SCREEN = 4; // if none of those is clear enough: the least cloudy (by tile) of the older ones, like scenes.py
+const MEASURE_BUDGET_MS = 5_000; // per window (both windows run at once): the extra round only gets what is left …
+const MIN_EXTRA_MS = 1_000; // … and is skipped when less than this remains
 const LIST_PER_WINDOW = 8; // candidates returned to the agent (keeps the MCP reply small)
 const TILE_CLOUD_CAP = 80; // eo:cloud_cover is per 110 km tile: only drop hopeless tiles before measuring
 const HAZE_ABS = 0.025; // median blue reflectance this far above the window's clearest scene = haze …
@@ -229,7 +232,7 @@ async function stacSearch(
 }
 
 /** AOI clear fraction (SCL) and median blue reflectance (B02) in one statistics call. Null on any failure. */
-async function measure(c: SceneCandidate, bbox: BBox): Promise<SceneCandidate> {
+async function measure(c: SceneCandidate, bbox: BBox, timeoutMs = STATS_TIMEOUT_MS): Promise<SceneCandidate> {
   const [x0, y0, x1, y1] = bbox;
   const q = new URLSearchParams({
     collection: c.collection,
@@ -246,7 +249,7 @@ async function measure(c: SceneCandidate, bbox: BBox): Promise<SceneCandidate> {
         properties: {},
         geometry: { type: "Polygon", coordinates: [[[x0, y0], [x1, y0], [x1, y1], [x0, y1], [x0, y0]]] },
       }),
-      signal: AbortSignal.timeout(STATS_TIMEOUT_MS),
+      signal: AbortSignal.timeout(timeoutMs),
     });
     if (!res.ok) return c;
     const body = (await res.json()) as { properties?: { statistics?: Record<string, { mean?: number; median?: number }> } };
@@ -262,10 +265,33 @@ async function measure(c: SceneCandidate, bbox: BBox): Promise<SceneCandidate> {
   }
 }
 
-/** Measures the first few candidates (in preference order); the rest are returned as they are. */
-async function measureFirst(cands: SceneCandidate[], bbox: BBox): Promise<SceneCandidate[]> {
-  const head = await Promise.all(cands.slice(0, SCREEN_PER_WINDOW).map((c) => measure(c, bbox)));
-  return [...head, ...cands.slice(SCREEN_PER_WINDOW)];
+const tileCloud = (c: SceneCandidate) => c.cloud_pct ?? 100;
+
+/**
+ * Measures the first few candidates (in preference order). If none is clear enough, also measures the least cloudy
+ * (by tile) of the rest, at most EXTRA_SCREEN more and only while the window's budget lasts, so a cloudy spell at
+ * the newest end of the window doesn't hide a clear scene a few passes earlier. Order is kept; unmeasured ones
+ * stay as they are.
+ */
+async function measureCandidates(cands: SceneCandidate[], bbox: BBox, need: number): Promise<SceneCandidate[]> {
+  const started = Date.now();
+  const out = [...cands];
+  const measureAt = async (idx: number[], timeoutMs: number) => {
+    const done = await Promise.all(idx.map((i) => measure(out[i], bbox, timeoutMs)));
+    idx.forEach((i, k) => (out[i] = done[k]));
+  };
+  await measureAt(out.slice(0, SCREEN_PER_WINDOW).map((_, i) => i), STATS_TIMEOUT_MS);
+  if (out.slice(0, SCREEN_PER_WINDOW).some((c) => (c.aoi_clear_fraction ?? 0) >= need)) return out;
+  const left = MEASURE_BUDGET_MS - (Date.now() - started);
+  if (left < MIN_EXTRA_MS || out.length <= SCREEN_PER_WINDOW) return out;
+  const extra = out
+    .map((c, i) => ({ c, i }))
+    .slice(SCREEN_PER_WINDOW)
+    .sort((a, b) => tileCloud(a.c) - tileCloud(b.c) || a.i - b.i)
+    .slice(0, EXTRA_SCREEN)
+    .map(({ i }) => i);
+  await measureAt(extra, Math.min(STATS_TIMEOUT_MS, left));
+  return out;
 }
 
 function describe(label: string, pick: SceneCandidate | null, cands: SceneCandidate[], need: number, window: DateRange): string[] {
@@ -276,7 +302,10 @@ function describe(label: string, pick: SceneCandidate | null, cands: SceneCandid
     notes.push(`${label}: ${pick.item_id} (${day}); AOI cloud not measured, tile cloud cover ${pick.cloud_pct ?? "?"}%.`);
   } else {
     notes.push(`${label}: ${pick.item_id} (${day}), ${Math.round(pick.aoi_clear_fraction * 100)}% of the AOI clear (SCL).`);
-    if (pick.aoi_clear_fraction < need) notes.push(`${label}: no scene in the window is clear enough; this is the clearest measured.`);
+    if (pick.aoi_clear_fraction < need) {
+      const checked = cands.filter((c) => c.aoi_clear_fraction != null).length;
+      notes.push(`${label}: no scene in the window is clear enough; this is the clearest of ${checked} measured.`);
+    }
   }
   const skipped = cands.slice(0, cands.indexOf(pick)).filter((c) => (c.aoi_clear_fraction ?? 0) >= need);
   if (skipped.length) notes.push(`${label}: skipped ${skipped.length} scene(s) ahead of it that SCL calls clear but look hazy.`);
@@ -301,7 +330,7 @@ export async function searchFreeScenes(q: FreeSceneQuery): Promise<FreeSceneResu
 
   const screenable = collection === "sentinel-2-l2a";
   const [after, before] = screenable
-    ? await Promise.all([measureFirst(afterCands, q.bbox), measureFirst(beforeCands, q.bbox)])
+    ? await Promise.all([measureCandidates(afterCands, q.bbox, need), measureCandidates(beforeCands, q.bbox, need)])
     : [afterCands, beforeCands];
   const afterPick = pickBest(after, need, q.maxCloudPct);
   const beforePick = q.before ? pickBest(before, need, q.maxCloudPct) : null;

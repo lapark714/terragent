@@ -205,11 +205,114 @@ describe("idempotency", () => {
 
   it("records AgentMail failures without throwing, and a retry can still send", async () => {
     await arm({ hello: true });
-    mail.send.mockRejectedValueOnce(new AgentMailError({ message: "rejected", statusCode: 403, body: { code: "message_rejected" } }));
+    mail.send.mockRejectedValueOnce(new AgentMailError({ message: "boom", statusCode: 500, body: { code: "internal_error" } }));
     const failed = await sendEmail(args({ idempotencyKey: "k-fail" }));
-    expect(failed).toMatchObject({ status: "blocked", blocked_reason: "send_failed:message_rejected" });
+    expect(failed).toMatchObject({ status: "blocked", blocked_reason: "send_failed:internal_error" });
     expect((await row(failed.message_id)).status).toBe("failed");
     expect((await sendEmail(args({ idempotencyKey: "k-fail" }))).status).toBe("sent");
+  });
+});
+
+describe("provider refusals", () => {
+  const limit = (message: string, code: string | null = "rate_limit_exceeded") =>
+    new AgentMailError({ message: "limited", statusCode: 429, body: code ? { name: "RateLimitError", code, message } : { message } });
+  const rejected = (code: string) => new AgentMailError({ message: "rejected", statusCode: 403, body: { name: "MessageRejectedError", code, message: "no" } });
+  const providerEvents = () =>
+    db.query<{ actor: string; request_id: string | null; payload: { reason: string; limit: string | null; http_status: number; to: string } }>(
+      "SELECT actor, request_id, payload FROM events WHERE type = 'email.blocked_by_provider' ORDER BY id");
+  let templates: Record<"outreach" | "followup", string>;
+  const outreachArgs = (o: Partial<SendEmailArgs> = {}) =>
+    args({ inbox: "outreach", kind: "outreach", channel: "email_warm", actor: "comms-outreach", templateId: templates.outreach, ...o });
+
+  beforeEach(async () => {
+    vi.stubEnv("COMPANY_POSTAL_ADDRESS", "1 Test Way, Testville, CA 90000");
+    templates = { outreach: await template("outreach"), followup: await template("followup") };
+  });
+
+  it("the new-org recipient ramp (429) blocks the message as provider_limit, logs it, and never throws or retries", async () => {
+    await arm({ hello: true });
+    mail.send.mockRejectedValueOnce(limit("Recipient limit exceeded for new organization"));
+    await db.query("INSERT INTO requests (id, source, question) VALUES ('req_l', 'portal', 'Did it flood?')");
+    const r = await sendEmail(args({ requestId: "req_l" }));
+    expect(r).toEqual({ status: "blocked", message_id: r.message_id, blocked_reason: "provider_limit:rate_limit_exceeded" });
+    expect(mail.send).toHaveBeenCalledOnce();
+    const [stored] = await db.query<{ status: string; blocked_reason: string; sent_at: Date | null }>(
+      "SELECT status, blocked_reason, sent_at FROM messages WHERE id = $1", [r.message_id]);
+    expect(stored).toEqual({ status: "blocked", blocked_reason: "provider_limit:rate_limit_exceeded", sent_at: null }); // no quota used
+    const [ev] = await providerEvents();
+    expect(ev).toMatchObject({ actor: "comms-customer", request_id: "req_l", payload: { reason: "provider_limit:rate_limit_exceeded", limit: "recipient", http_status: 429, to: "pat@acme.com" } });
+    expect(JSON.stringify(ev.payload)).not.toContain("new organization"); // never the provider's message body
+  });
+
+  it("403 block list and suspension responses become provider_rejected:<code>", async () => {
+    await arm({ hello: true });
+    mail.send.mockRejectedValueOnce(rejected("message_rejected")).mockRejectedValueOnce(rejected("account_suspended"));
+    expect((await sendEmail(args())).blocked_reason).toBe("provider_rejected:message_rejected");
+    expect((await sendEmail(args())).blocked_reason).toBe("provider_rejected:account_suspended");
+    expect((await providerEvents()).map((e) => [e.payload.reason, e.payload.limit])).toEqual([
+      ["provider_rejected:message_rejected", null], ["provider_rejected:account_suspended", null],
+    ]);
+  });
+
+  it("a 429 without a code is still a provider limit; a bare API rate limit doesn't pause outreach", async () => {
+    await arm({ hello: true, outreach: true });
+    mail.send.mockRejectedValueOnce(limit("Too many requests", null));
+    expect((await sendEmail(args())).blocked_reason).toBe("provider_limit:http_429");
+    expect((await providerEvents())[0].payload.limit).toBe("rate");
+    expect((await sendEmail(outreachArgs())).status).toBe("sent");
+  });
+
+  it("a retry with the same key re-checks a provider-blocked message and can send it", async () => {
+    await arm({ hello: true });
+    mail.send.mockRejectedValueOnce(limit("Daily send limit exceeded"));
+    const blocked = await sendEmail(args({ idempotencyKey: "deliver:req_7" }));
+    expect(blocked.blocked_reason).toBe("provider_limit:rate_limit_exceeded");
+    const sent = await sendEmail(args({ idempotencyKey: "deliver:req_7" }));
+    expect(sent).toMatchObject({ status: "sent", message_id: blocked.message_id });
+    expect(mail.send.mock.calls[0][2]).toBe(mail.send.mock.calls[1][2]); // AgentMail sees the same idempotency key
+  });
+
+  it("after a recipient/daily limit, first touches pause for an hour without calling AgentMail; customer mail still tries", async () => {
+    await arm({ hello: true, outreach: true });
+    mail.send.mockRejectedValueOnce(limit("Recipient limit exceeded"));
+    expect((await sendEmail(outreachArgs({ to: "a@one.com" }))).blocked_reason).toBe("provider_limit:rate_limit_exceeded");
+
+    const paused = await sendEmail(outreachArgs({ to: "b@two.com" }));
+    expect(paused.blocked_reason).toBe("provider_limit:cooldown");
+    expect(mail.send).toHaveBeenCalledOnce();
+    expect((await providerEvents()).length).toBe(1); // a local pause isn't a provider refusal, so it can't extend itself
+
+    expect((await sendEmail(args({ to: "customer@three.com" }))).status).toBe("sent");
+    expect((await sendEmail(outreachArgs({ to: "c@four.com", kind: "followup", templateId: templates.followup }))).status).toBe("sent");
+
+    await db.query("UPDATE events SET created_at = now() - interval '61 minutes' WHERE type = 'email.blocked_by_provider'");
+    expect((await sendEmail(outreachArgs({ to: "b@two.com", idempotencyKey: paused.message_id }))).status).toBe("sent");
+  });
+});
+
+describe("offline mode", () => {
+  it("TERRAGENT_OFFLINE records the message as blocked offline and never calls AgentMail", async () => {
+    vi.stubEnv("TERRAGENT_OFFLINE", "1");
+    await arm({ hello: true });
+    const r = await sendEmail(args({ to: "founder@team.com" }));
+    expect(r).toMatchObject({ status: "blocked", blocked_reason: "offline" });
+    expect(await row(r.message_id)).toMatchObject({ status: "blocked", blocked_reason: "offline", counterpart_email: "founder@team.com" });
+    expect(mail.send).not.toHaveBeenCalled();
+  });
+
+  it("the local demo database is offline too, including replies to messages we don't have", async () => {
+    vi.stubEnv("TERRAGENT_DB", "local");
+    const r = await replyInThread({ inbox: "hello", inReplyToMessageId: "<unknown>", text: "Hi", kind: "customer", idempotencyKey: "reply-off", actor: "comms-customer" });
+    expect(r.blocked_reason).toBe("offline");
+    expect(mail.getMessage).not.toHaveBeenCalled();
+    expect(mail.reply).not.toHaveBeenCalled();
+  });
+
+  it("is never on in production", async () => {
+    vi.stubEnv("TERRAGENT_OFFLINE", "1");
+    vi.stubEnv("VERCEL_ENV", "production");
+    await arm({ hello: true });
+    expect((await sendEmail(args())).status).toBe("sent");
   });
 });
 

@@ -61,17 +61,18 @@ export async function pollSignals(a: { playbook: OutboundPlaybook; sinceHours?: 
   const fresh: CompactSignal[] = [];
 
   // Fetch every feed at once (the MCP call has to finish well inside Vercel's 300 s), then store in feed order.
+  // pollFeed's warnings already start with "<feed>: "; only the (never expected) throw needs the prefix here.
   const results = await Promise.all(
     feeds.map((feed) =>
       pollFeed(feed, { since, limit: a.limitPerFeed ?? 50, playbook: a.playbook, agent: a.actor, allowPaid: a.allowPaid ?? true }).catch((e: unknown) => ({
         signals: [] as SignalInput[],
-        warnings: [e instanceof Error ? e.message : String(e)],
+        warnings: [`${feed}: ${e instanceof Error ? e.message : String(e)}`],
       })),
     ),
   );
   for (const [i, feed] of feeds.entries()) {
     const fetched = results[i].signals;
-    warnings.push(...results[i].warnings.map((w) => `${feed}: ${w}`));
+    warnings.push(...results[i].warnings);
     // Most alerts persist across polls: skip known ones before computing cells (the insert still dedupes races).
     const known = new Set(
       (await db.query<{ external_id: string }>("SELECT external_id FROM signals WHERE feed = $1 AND external_id = ANY($2)",

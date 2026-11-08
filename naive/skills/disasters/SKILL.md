@@ -16,7 +16,9 @@ property, for the business that owns or insures it.
 | `firms` (NASA FIRMS VIIRS, 24 h) | active-fire detections | clusters of several detections near built-up or farmed land |
 | `openfema` | disaster declarations by county | context: confirms a serious event, names counties |
 | `usgs_quake` | significant earthquakes | only M6+ near settlements; damage is mostly NOT visible at 10 m, so low priority |
-| `news` | local reports of flooding, fire, damage | to confirm extent and dates |
+
+There is no news feed for this playbook. To confirm a flood's or fire's extent and dates from local reports, use
+web_search or the Naïve data tools (data_search / data_run, category news) once a signal is worth keeping.
 
 Keep a signal only if its effect is visible to Sentinel-2 at 10 m: flood water extent, burn scars, large debris
 fields or landslides. Wind damage to individual roofs is not visible; skip those.

@@ -15,6 +15,11 @@ export interface PlaybookFunnel {
   samples_started: number;
   free_reports_verified: number;
   first_touches: number;
+  /**
+   * Prospects whose first touch AgentMail refused (sending limits such as the new-org recipient ramp, block list,
+   * suspension) and that no other first touch reached. Not in first_touches: a volume problem, not a playbook result.
+   */
+  blocked_by_provider: number;
   touches_by_channel: Record<string, number>;
   replies: number;
   /** Spec §8: replies tracked by signal type and message version. */
@@ -41,7 +46,7 @@ export async function naiveSpend(opts: { from?: Date } = {}): Promise<{ summary:
 
 export const emptyFunnel = (): PlaybookFunnel => ({
   signals: 0, signals_matched: 0, prospects: 0, samples_started: 0, free_reports_verified: 0, first_touches: 0,
-  touches_by_channel: {}, replies: 0, by_signal_feed: {}, by_message_version: {}, quotes: 0,
+  blocked_by_provider: 0, touches_by_channel: {}, replies: 0, by_signal_feed: {}, by_message_version: {}, quotes: 0,
   revenue_paid_usd: 0, revenue_committed_usd: 0, stated_willingness_usd: 0,
   cost_usd: 0, reply_rate: null, cost_per_report_usd: null, value_usd: 0,
 });
@@ -72,6 +77,36 @@ export function suggestAllocation(funnels: Record<OutboundPlaybook, PlaybookFunn
 }
 
 type Grouped = { playbook: string; n: number }[];
+
+/** blocked_reason of a send AgentMail itself refused (src/lib/email/send.ts): provider_limit:<code> | provider_rejected:<code>. */
+export const PROVIDER_BLOCK_RE = "^provider_(limit|rejected):";
+
+/**
+ * First touches refused by the provider, per playbook (cohort = prospects created since `since`): prospects with a
+ * blocked outreach email whose reason is a provider refusal and no first touch sent on any channel. `by_reason` uses
+ * each prospect's latest refusal. The dashboard can show the same numbers.
+ */
+export async function blockedByProvider(since: Date): Promise<{ by_playbook: Record<string, number>; by_reason: Record<string, number>; total: number }> {
+  const db = await getDb();
+  const rows = await db.query<{ playbook: string; reason: string; n: number }>(
+    `SELECT p.playbook, b.reason, count(*)::int AS n FROM prospects p
+     JOIN LATERAL (SELECT m.blocked_reason AS reason FROM messages m
+                   WHERE m.prospect_id = p.id AND m.direction = 'outbound' AND m.kind = 'outreach' AND m.status = 'blocked'
+                     AND m.blocked_reason ~ $2
+                   ORDER BY m.created_at DESC LIMIT 1) b ON true
+     WHERE p.created_at >= $1
+       AND NOT EXISTS (SELECT 1 FROM messages s WHERE s.prospect_id = p.id AND s.direction = 'outbound' AND s.kind = 'outreach' AND s.status = 'sent')
+     GROUP BY p.playbook, b.reason`,
+    [since, PROVIDER_BLOCK_RE],
+  );
+  const out = { by_playbook: {} as Record<string, number>, by_reason: {} as Record<string, number>, total: 0 };
+  for (const r of rows) {
+    out.by_playbook[r.playbook] = (out.by_playbook[r.playbook] ?? 0) + num(r.n);
+    out.by_reason[r.reason] = (out.by_reason[r.reason] ?? 0) + num(r.n);
+    out.total += num(r.n);
+  }
+  return out;
+}
 
 export async function getMetrics(f: { sinceHours?: number } = {}) {
   const db = await getDb();
@@ -107,6 +142,9 @@ export async function getMetrics(f: { sinceHours?: number } = {}) {
     fu.touches_by_channel[r.channel] = num(r.n);
     fu.first_touches += num(r.n);
   }
+
+  const providerBlocks = await blockedByProvider(since);
+  for (const [playbook, n] of Object.entries(providerBlocks.by_playbook)) if (at(playbook)) at(playbook).blocked_by_provider = n;
 
   // A reply = they answered (inbound message) or moved on to a quote / payment. Every prospect has one feed,
   // so the per-feed rows also give the playbook's reply total.
@@ -192,10 +230,18 @@ export async function getMetrics(f: { sinceHours?: number } = {}) {
       stated_willingness_usd: round2(num(totals.stated)),
       value_usd: value,
       margin_usd: round2(value - spend),
+      blocked_by_provider: providerBlocks.total,
+      blocked_by_provider_reasons: providerBlocks.by_reason,
     },
     allocation: await getAllocation(),
     suggested_allocation: suggestAllocation(funnels),
     suggestion_method: "weight ∝ ((replies+1)/(touches+4)) × (1 + value/$100) / cost_per_report, 10% floor each; a starting point, not a rule",
-    warnings: naive?.warning ? [naive.warning] : [],
+    warnings: [
+      ...(naive?.warning ? [naive.warning] : []),
+      ...(providerBlocks.total
+        ? [`${providerBlocks.total} first touch(es) refused by AgentMail (${Object.keys(providerBlocks.by_reason).join(", ")}): ` +
+          "a sending-limit problem, not a playbook result; don't shift allocation because of them."]
+        : []),
+    ],
   };
 }

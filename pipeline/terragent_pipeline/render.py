@@ -143,11 +143,21 @@ def _hatch(map_img: Image.Image, invalid: np.ndarray) -> Image.Image:
 
 
 # --- footer -----------------------------------------------------------------------------------------------
+def scale_label(metres: int) -> str:
+    """'500 m', '1 km', '2.5 km' (true division: 2500 m is not '2 km')."""
+    return f"{metres / 1000:g} km" if metres >= 1000 else f"{metres} m"
+
+
+def scale_bar_metres(m_per_px: float, max_px: int = 110) -> int:
+    """Longest NICE_M length that fits in max_px at this ground resolution."""
+    fits = [m for m in NICE_M if m / m_per_px <= max_px]
+    return fits[-1] if fits else NICE_M[0]
+
+
 def _scale_bar(draw: ImageDraw.ImageDraw, right: int, y: int, m_per_px: float) -> None:
-    fits = [m for m in NICE_M if m / m_per_px <= 110]
-    metres = fits[-1] if fits else NICE_M[0]
+    metres = scale_bar_metres(m_per_px)
     px = max(1, round(metres / m_per_px))
-    label = f"{metres // 1000:g} km" if metres >= 1000 else f"{metres} m"
+    label = scale_label(metres)
     x0 = right - px
     draw.line([(x0, y + 8), (right, y + 8)], fill=TEXT, width=2)
     draw.line([(x0, y + 3), (x0, y + 9)], fill=TEXT, width=2)

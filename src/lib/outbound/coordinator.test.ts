@@ -66,7 +66,7 @@ describe("getMetrics", () => {
     const m = await getMetrics();
     expect(m.by_playbook.disasters).toEqual({
       signals: 3, signals_matched: 2, prospects: 4, samples_started: 3, free_reports_verified: 2,
-      first_touches: 3, touches_by_channel: { contact_form: 1, email_warm: 2 }, replies: 2, quotes: 1,
+      first_touches: 3, blocked_by_provider: 0, touches_by_channel: { contact_form: 1, email_warm: 2 }, replies: 2, quotes: 1,
       by_signal_feed: { nws: { touches: 3, replies: 2 } },
       by_message_version: { v1: { touches: 2, replies: 1 }, v2: { touches: 1, replies: 1 } },
       revenue_paid_usd: 49, revenue_committed_usd: 0, stated_willingness_usd: 0,
@@ -76,7 +76,10 @@ describe("getMetrics", () => {
     expect(m.by_playbook.mining.signals).toBe(1);
     expect(m.inbound).toEqual({ requests: 1, delivered: 1, refused: 0, quotes: 1, value_usd: 29 });
     // Naïve ledger 12.5 + non-Naïve spend rows 0.15
-    expect(m.overall).toEqual({ spend_usd: 12.65, revenue_paid_usd: 49, revenue_committed_usd: 29, stated_willingness_usd: 100, value_usd: 78, margin_usd: 65.35 });
+    expect(m.overall).toEqual({
+      spend_usd: 12.65, revenue_paid_usd: 49, revenue_committed_usd: 29, stated_willingness_usd: 100, value_usd: 78, margin_usd: 65.35,
+      blocked_by_provider: 0, blocked_by_provider_reasons: {},
+    });
     expect(m.allocation.source).toBe("default");
     expect(Object.values(m.suggested_allocation).reduce((a, b) => a + b, 0)).toBeCloseTo(1, 6);
     expect(m.warnings).toEqual([]);

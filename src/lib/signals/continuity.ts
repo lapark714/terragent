@@ -9,8 +9,8 @@ import { getDb } from "../db/client";
 import type { SignalFeed, SignalInput } from "../domain";
 import { DAY_MS } from "./types";
 
-/** Feeds whose signals are point clusters (cluster.ts); blm_claims is pending its SIGNAL_FEEDS entry. */
-export const CLUSTERED_FEEDS: ReadonlySet<string> = new Set(["firms", "gfw", "blm_claims"]);
+/** Feeds whose signals are point clusters (cluster.ts). */
+export const CLUSTERED_FEEDS: ReadonlySet<SignalFeed> = new Set<SignalFeed>(["firms", "gfw", "blm_claims"]);
 const WINDOW_DAYS = 14;
 /** Slack on top of both footprints: the gap that clusterPoints would still have chained (~2-3 km). */
 const MARGIN_KM = 2;

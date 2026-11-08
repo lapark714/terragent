@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { setMailApi } from "../agentmail/client";
 import type { Db } from "../db/client";
 import { fromSdkMessage, fromWireMessage, htmlToText } from "./inbound-parse";
@@ -70,6 +70,18 @@ describe("getThread", () => {
     const attachments = [{ attachmentId: "att_1", filename: "site.kml", contentType: "application/vnd.google-earth.kml+xml", size: 2048 }];
     await db.query("UPDATE messages SET meta = meta || $1::jsonb", [JSON.stringify({ attachments })]);
     expect((await getThread("thr-1"))?.messages[0].attachments).toEqual(attachments);
+  });
+
+  it("offline (local demo database) reads stored messages only and never calls AgentMail", async () => {
+    vi.stubEnv("TERRAGENT_DB", "local");
+    try {
+      await store({ id: "m1", direction: "inbound", status: "received", verdict: "pending", at: "2026-11-07T10:00:00Z", text: "hi" });
+      expect((await getThread("thr-1"))?.messages[0]).toMatchObject({ text: "hi", security_verdict: null });
+      expect(await getThread("thr-unknown")).toBeNull();
+      expect(mail.getThread).not.toHaveBeenCalled();
+    } finally {
+      vi.unstubAllEnvs();
+    }
   });
 
   it("returns null for an unknown thread, and DB rows when AgentMail is unreachable", async () => {

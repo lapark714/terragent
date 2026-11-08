@@ -42,6 +42,7 @@ function Card({ r, now }: { r: BoardRequest; now: number | null }) {
 }
 
 function NaiveStrip({ naive }: { naive: Board["naive"] }) {
+  if (naive.state === "offline") return <Quiet>Local demo mode: the Naïve board isn&apos;t called, so only our own request log shows here.</Quiet>;
   if (naive.state === "not_configured") return <Quiet>Naïve board not connected on this deployment.</Quiet>;
   if (naive.state === "error") return <Quiet>Naïve board unavailable right now ({naive.message}).</Quiet>;
   const cards: NaiveCard[] = naive.data;

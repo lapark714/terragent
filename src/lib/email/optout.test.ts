@@ -69,6 +69,16 @@ describe("suppress", () => {
     expect(events.map((e) => e.type)).toEqual(["email.suppressed", "email.blocklist_failed"]);
   });
 
+  it("offline: suppresses locally without calling AgentMail, and reaches the block list on the next online suppress", async () => {
+    vi.stubEnv("TERRAGENT_OFFLINE", "1");
+    await suppress("off@y.com", "opt_out");
+    expect(await isSuppressed("off@y.com")).toBe(true);
+    expect(mail.blockSend).not.toHaveBeenCalled();
+    vi.stubEnv("TERRAGENT_OFFLINE", "");
+    await suppress("off@y.com", "opt_out");
+    expect(mail.blockSend).toHaveBeenCalledWith("off@y.com", "opted out");
+  });
+
   it("doesn't call AgentMail for bounces (AgentMail already suppresses those)", async () => {
     await suppress("b@y.com", "bounce");
     expect(mail.blockSend).not.toHaveBeenCalled();

@@ -13,7 +13,7 @@ function Figure({ label, value, children }: { label: string; value: string; chil
   );
 }
 
-export function MoneyPanel({ money: m }: { money: Money }) {
+export function MoneyPanel({ money: m, offline = false }: { money: Money; offline?: boolean }) {
   const topAgents = m.byAgent.slice(0, 4);
   const maxAgent = Math.max(0.0001, ...topAgents.map((a) => a.usd));
   return (
@@ -76,7 +76,11 @@ export function MoneyPanel({ money: m }: { money: Money }) {
         </tbody>
       </table>
       <p className="text-xs text-fg-3">
-        {m.spend.naiveSource === "ledger" ? "Naïve spend from the live Naïve ledger." : "Naïve spend from recorded rows; the live ledger isn't connected here."}
+        {m.spend.naiveSource === "ledger"
+          ? "Naïve spend from the live Naïve ledger."
+          : offline
+            ? "Local demo mode: Naïve spend from the demo rows; the live ledger isn't called."
+            : "Naïve spend from recorded rows; the live ledger isn't connected here."}
       </p>
     </div>
   );

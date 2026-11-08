@@ -19,6 +19,10 @@ export function register(r: ToolRegistrar): void {
       after: DateRange.optional(),
       max_cloud_pct: z.number().min(0).max(100).optional(),
       collection: z.enum(["sentinel-2-l2a", "landsat-c2-l2"]).optional(),
+      after_preference: z
+        .enum(["latest", "earliest"])
+        .optional()
+        .describe('"earliest" = first clear scene after the event (floods recede within days); default: earliest for a flood_extent spec, else latest'),
     },
     async (a) => {
       const spec = a.request_id ? ((await requireRequest(a.request_id)).data_spec as DataSpec | null) : null;
@@ -28,6 +32,8 @@ export function register(r: ToolRegistrar): void {
       return searchFreeScenes({
         bbox, after, before: a.before !== undefined ? a.before : (spec?.before ?? null),
         maxCloudPct: a.max_cloud_pct ?? spec?.max_cloud_pct ?? 30, collection: a.collection,
+        // Same rule as the pipeline (recipes.py earliest_after), so the plan's after scene is the one it would pick.
+        afterPreference: a.after_preference ?? (spec?.recipe === "flood_extent" ? "earliest" : "latest"),
       });
     },
   );

@@ -1,15 +1,20 @@
-/** Comms 2 (hello@) customer email: clarifying questions, refusals, quotes and report delivery, in the request's thread. */
+/** Comms 2 (hello@) customer email: clarifying questions, refusals, updates, quotes and report delivery, in the request's thread. */
 import { createHash } from "node:crypto";
-import { type RenderedEmail, type ReportForEmail, renderClarifyingQuestion, renderQuote, renderRefusal, renderReportDelivery } from "../email/templates";
+import { isOwnAddress } from "../agentmail/config";
+import { isValidEmail, normalizeEmail } from "../email/address";
+import { suppress } from "../email/optout";
+import {
+  type RenderedEmail, type ReportForEmail, renderClarifyingQuestion, renderCustomerUpdate, renderQuote, renderRefusal, renderReportDelivery,
+} from "../email/templates";
 import { replyInThread, type SendResult, sendEmail } from "../email/send";
 import { getThread } from "../email/threads";
-import { Inbox } from "../domain";
+import { Inbox, TERMINAL_STATUSES } from "../domain";
 import { logEvent } from "../events";
 import { num, query } from "./db";
 import { priceBlockedReason } from "./gates";
 import { getQuote } from "./quotes";
 import { latestReport, reportView } from "./reports";
-import { isTerminal, requireRequest, setStatus, type RequestRow } from "./requests";
+import { addNote, getRequest, isTerminal, requireRequest, setStatus, type RequestRow } from "./requests";
 
 const hash = (t: string) => createHash("sha256").update(t).digest("hex").slice(0, 16);
 
@@ -37,20 +42,58 @@ function assertOpen(req: RequestRow) {
   if (isTerminal(req)) throw new Error(`Request ${req.id} is ${req.status}; nothing more is sent to the customer for it.`);
 }
 
-export async function sendCustomerMessage(a: { requestId: string; kind: "clarifying_question" | "refusal"; text: string }, actor: string) {
+export type CustomerMessageKind = "clarifying_question" | "refusal" | "update";
+
+/**
+ * An update email. A monitoring follow-up (record_monitor_check → comms-customer, stage delivery) has no report of
+ * its own, so the update IS its delivery and closes it; it quotes the watched request's question and links that
+ * request's report. A follow-up that got a report of its own goes out with deliver_report instead.
+ */
+async function renderUpdate(req: RequestRow, text: string): Promise<{ email: RenderedEmail; closes: boolean }> {
+  const monitoring = req.source === "monitor" && !(await latestReport(req.id));
+  const parentId = req.meta?.parent_request_id;
+  const parent = monitoring && typeof parentId === "string" ? await getRequest(parentId) : null;
+  const about = parent ?? req;
+  const report = await latestReport(about.id);
+  const reportUrl = report?.verifier_status === "pass" ? reportView(report).url : null;
+  return {
+    email: renderCustomerUpdate({ customerName: req.customer_name, question: about.question, update: text, reportUrl, monitoring }),
+    closes: monitoring,
+  };
+}
+
+/**
+ * clarifying_question parks the request (clarifying); refusal goes out on a request record_screening refused; update is
+ * a status note on an open request, and on a monitoring follow-up it is the delivery, so sending it closes that
+ * request as delivered (set_status can't, by design: delivered comes only from a tool that delivered something).
+ */
+export async function sendCustomerMessage(a: { requestId: string; kind: CustomerMessageKind; text: string }, actor: string) {
   const req = await requireRequest(a.requestId);
+  if (req.is_free_sample) throw new Error("Free samples and their follow-ups are sent by comms-outreach, not from hello@.");
   let email: RenderedEmail;
+  let closes = false;
   if (a.kind === "refusal") {
     if (req.status !== "refused") throw new Error("Record the refusal first: record_screening with allowed=false.");
     email = renderRefusal({ customerName: req.customer_name, reason: a.text });
+  } else if (a.kind === "update") {
+    assertOpen(req);
+    ({ email, closes } = await renderUpdate(req, a.text));
   } else {
     assertOpen(req);
     email = renderClarifyingQuestion({ customerName: req.customer_name, question: req.question, clarifyingQuestion: a.text });
   }
   const sent = await sendToCustomer(req, email, `${req.id}:${a.kind}:${hash(a.text)}`, actor);
   if (a.kind === "clarifying_question" && sent.status === "sent") await setStatus(req.id, "clarifying", actor, "Asked the customer a clarifying question");
+  if (closes && sent.status === "sent") await setStatus(req.id, "delivered", actor, "Monitoring update sent to the customer");
   await logEvent("customer_message.sent", actor, { kind: a.kind, status: sent.status, blocked_reason: sent.blocked_reason }, req.id);
-  return outcome(sent);
+  if (!closes) return outcome(sent);
+  return {
+    ...outcome(sent),
+    request_status: sent.status === "sent" ? "delivered" : req.status,
+    next: sent.status === "sent"
+      ? "The monitoring update was this follow-up's delivery; the request is closed. End your turn."
+      : "Not sent (see blocked_reason); the request stays open. Add a note and end your turn; don't retry another way.",
+  };
 }
 
 export async function sendQuote(requestId: string, actor: string) {
@@ -108,4 +151,56 @@ export async function deliverReport(requestId: string, actor: string) {
   await logEvent(sent.status === "sent" ? "report.delivered" : "report.delivery_blocked", actor, { report_id: report.id, ...outcome(sent) }, req.id);
   if (sent.status === "sent") await setStatus(req.id, "delivered", actor, `Report ${report.id} delivered`);
   return { ...outcome(sent), url: view.url };
+}
+
+/** Who may be opted out from a request: its customer and anyone who wrote to us in its thread (latest first). */
+async function requestAddresses(req: RequestRow): Promise<string[]> {
+  const rows = await query<{ email: string }>(
+    `SELECT lower(counterpart_email) AS email FROM messages
+     WHERE direction = 'inbound' AND counterpart_email IS NOT NULL AND (request_id = $1 OR ($2::text IS NOT NULL AND thread_id = $2))
+     GROUP BY 1 ORDER BY max(created_at) DESC`,
+    [req.id, req.thread_id],
+  );
+  const out = [req.customer_email ? normalizeEmail(req.customer_email) : null, ...rows.map((r) => r.email)].filter((e): e is string => !!e);
+  return [...new Set(out)];
+}
+
+/**
+ * The customer asked for no more email: suppress the address (our list and AgentMail's block list), note it on the
+ * request, cancel the request if it is still open, and stop the monitors that would email them. Only the request's
+ * customer or someone who wrote in its thread can be opted out here, so an address quoted in an email can't be
+ * silenced on someone else's say-so.
+ */
+export async function recordCustomerOptOut(a: { requestId: string; email?: string; reason: string }, actor: string) {
+  const req = await requireRequest(a.requestId);
+  const allowed = await requestAddresses(req);
+  const email = normalizeEmail(a.email ?? allowed[0] ?? "");
+  if (!email) throw new Error(`Request ${req.id} has no customer email or inbound message; pass the address that asked to opt out.`);
+  if (!isValidEmail(email)) throw new Error(`"${email}" is not an email address.`);
+  if (isOwnAddress(email)) throw new Error(`${email} is one of our own inboxes.`);
+  if (!allowed.includes(email)) {
+    throw new Error(`${email} is not the customer on ${req.id} and has not written in its thread; only they can be opted out from this request.`);
+  }
+
+  await suppress(email, "opt_out", actor);
+  await addNote(req.id, actor, `Opted out of all email (${email}): ${a.reason}`);
+  const cancelled = !isTerminal(req);
+  if (cancelled) await setStatus(req.id, "cancelled", actor, `Customer opted out of email: ${a.reason}`.slice(0, 1000));
+  const monitors = await query<{ id: string }>(
+    `UPDATE monitors SET status = 'cancelled' WHERE status = 'active'
+       AND request_id IN (SELECT id FROM requests WHERE lower(customer_email) = $1) RETURNING id`,
+    [email],
+  );
+  const others = await query<{ id: string }>(
+    `SELECT id FROM requests WHERE lower(customer_email) = $1 AND id <> $2 AND NOT (status = ANY($3::text[])) ORDER BY created_at`,
+    [email, req.id, [...TERMINAL_STATUSES]],
+  );
+  await logEvent("customer.opted_out", actor, { email, reason: a.reason, cancelled, monitors_stopped: monitors.map((m) => m.id) }, req.id);
+  return {
+    email, suppressed: true,
+    request_status: cancelled ? "cancelled" : req.status,
+    monitors_stopped: monitors.map((m) => m.id),
+    other_open_requests: others.map((o) => o.id),
+    next: "Done: nothing more can be emailed to this address (sends to it are blocked). Send nothing else; end your turn.",
+  };
 }

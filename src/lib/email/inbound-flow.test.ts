@@ -49,6 +49,18 @@ describe("routing with the real handoff", () => {
     expect(m.meta.route_error).toBeUndefined();
   });
 
+  it("a reply to a refusal opens a fresh request that core lets Comms 2 screen", async () => {
+    await db.query("INSERT INTO requests (id, source, question, thread_id, inbox, status) VALUES ('req_r', 'email', 'Track this car', 'thr-1', 'hello', 'refused')");
+    const out = await handleInboundEmail(reply("I meant our fleet depot's parking lot at 1 Main St"));
+    const rescreen = await getRequest(out.requestId!);
+    expect(rescreen).toMatchObject({ thread_id: "thr-1", status: "screening", owner_agent: "comms-customer", meta: { follows: "req_r", origin: "refusal_reply" } });
+    expect((await handoffs(rescreen!.id)).map((e) => e.payload)).toMatchObject([{ to: "comms-customer", stage: "screening" }]);
+    expect(await getRequest("req_r")).toMatchObject({ status: "refused" });
+    const [m] = await db.query<{ request_id: string; meta: { route_error?: string } }>("SELECT request_id, meta FROM messages");
+    expect(m).toMatchObject({ request_id: rescreen!.id, meta: {} });
+    expect(m.meta.route_error).toBeUndefined();
+  });
+
   it("a reply on an open request is handed to Comms 2", async () => {
     await db.query("INSERT INTO requests (id, source, question, thread_id, inbox, status) VALUES ('req_c', 'email', 'Did it flood?', 'thr-1', 'hello', 'clarifying')");
     expect((await handleInboundEmail(reply("It's the warehouse at 1 Main St"))).requestId).toBe("req_c");

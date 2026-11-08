@@ -1,6 +1,9 @@
 /** Runtime helpers over @usenaive-sdk/managed-agents sessions (agent ids from settings). */
+import { createHash, randomBytes } from "node:crypto";
 import { AGENT_BUDGETS, usd } from "../config";
 import type { AgentName } from "../domain";
+import { isOffline } from "../env";
+import { logEvent } from "../events";
 import { getNaive } from "./client";
 import { agentId, agentNamesById } from "./registry";
 
@@ -13,8 +16,25 @@ export interface StartSessionOpts {
   idempotencyKey?: string;
 }
 
-/** Start a top-level session of a provisioned agent. Returns the ses_ id. */
+/** Prefix of the stand-in session ids that offline mode returns instead of starting a real session. */
+export const OFFLINE_SESSION_PREFIX = "ses_offline_";
+
+/**
+ * Offline mode (npm run dev:local): no Naïve call. A stand-in id (stable per idempotency key, like the real API)
+ * and an `offline.skipped` event, so the board and the request's timeline show the hand-off was skipped on purpose.
+ */
+async function skipOffline(agent: AgentName, opts: StartSessionOpts): Promise<{ session_id: string }> {
+  const suffix = opts.idempotencyKey
+    ? createHash("sha256").update(opts.idempotencyKey).digest("hex").slice(0, 16)
+    : randomBytes(8).toString("hex");
+  const session_id = `${OFFLINE_SESSION_PREFIX}${suffix}`;
+  await logEvent("offline.skipped", "system", { service: "naive", call: "sessions.create", agent, session_id, stage: opts.metadata?.stage ?? null }, opts.requestId);
+  return { session_id };
+}
+
+/** Start a top-level session of a provisioned agent. Returns the ses_ id (a stand-in ses_offline_… id in offline mode). */
 export async function startAgentSession(agent: AgentName, message: string, opts: StartSessionOpts = {}): Promise<{ session_id: string }> {
+  if (isOffline()) return skipOffline(agent, opts);
   const naive = await getNaive();
   const metadata: Record<string, string> = { ...opts.metadata, agent };
   if (opts.requestId) metadata.request_id = opts.requestId;
@@ -60,8 +80,9 @@ export function isApprovable(agent: AgentName, tool: string, args: Record<string
   return !(tool === "browser" && NEVER_APPROVED_BROWSER_ACTIONS.has(String(args.action)));
 }
 
-/** Tool calls Terragent's agents parked for a human (e.g. terragent.place_paid_order), newest sessions first. */
+/** Tool calls Terragent's agents parked for a human (e.g. terragent.place_paid_order), newest sessions first. None offline. */
 export async function listPendingApprovals(): Promise<PendingApproval[]> {
+  if (isOffline()) return [];
   const naive = await getNaive();
   const names = await agentNamesById();
   const out: PendingApproval[] = [];
@@ -94,6 +115,7 @@ export async function listPendingApprovals(): Promise<PendingApproval[]> {
  * is always possible. The session resumes once its last pending action is decided.
  */
 export async function decideApproval(sessionId: string, toolCallId: string, decision: "allow" | "deny", reason: string): Promise<void> {
+  if (isOffline()) throw new Error("Offline mode: Naïve isn't called locally, so there is no parked call to decide.");
   const naive = await getNaive();
   const session = await naive.sessions.get(sessionId);
   const agent = (await agentNamesById()).get(session.agent_id);

@@ -2,12 +2,15 @@
  * Shapes the dashboard API returns. Client components import these types only (no server code),
  * so everything here is plain JSON: ISO date strings, numbers, masked text.
  */
-import type { DecisionKind, Inbox, Layer, Playbook, RequestStatus } from "../domain";
+import type { AgentName, DecisionKind, Inbox, Layer, Playbook, RequestStatus } from "../domain";
 
-/** One panel's data, or why it is missing. Panels fail independently. */
-export type Panel<T> = { ok: true; data: T } | { ok: false; error: string };
-/** Data from Naïve or another service that may not be configured yet. */
-export type Live<T> = { state: "ok"; data: T } | { state: "not_configured" } | { state: "error"; message: string };
+/** One panel's data, or why it is missing. Panels fail independently. `suspended`: the database is paused (Neon quota). */
+export type Panel<T> = { ok: true; data: T } | { ok: false; error: string; suspended?: boolean };
+/**
+ * Data from Naïve or another service that may not be configured yet. `offline`: local UI mode (npm run dev:local),
+ * where the service is deliberately never called.
+ */
+export type Live<T> = { state: "ok"; data: T } | { state: "not_configured" } | { state: "offline" } | { state: "error"; message: string };
 
 export interface GlobeCell {
   h3: string;
@@ -31,16 +34,29 @@ export interface GlobeData {
 export interface Overview {
   inbound: number;
   samples: number;
+  /** Created since 00:00 UTC today: customer requests and free samples. */
+  inboundToday: number;
+  samplesToday: number;
   active: number;
   delivered: number;
+  /** Delivered requests whose answer is a verified report (customers and free samples). */
+  reportsDelivered: number;
   refused: number;
   verifiedReports: number;
+  /** Businesses reached at least once (email or their own contact form). */
+  firstTouches: number;
+  /** Outreach touches held back: by our gates (unarmed inbox, opt-out, caps) or by the email provider. */
+  touchesHeld: number;
+  replies: number;
   indexCells: number;
   interventions: number;
   /** Median seconds from request to delivery, inbound requests only. */
   medianAnswerSeconds: number | null;
   lastEventAt: string | null;
 }
+
+/** GET /api/dashboard/overview. */
+export type OverviewResponse = Panel<Overview> & { dbSuspended: boolean };
 
 export const FUNNEL_STAGES = ["signals", "prospects", "reports", "touches", "replies", "quotes", "paid"] as const;
 export type FunnelStageKey = (typeof FUNNEL_STAGES)[number];
@@ -89,10 +105,16 @@ export interface Interventions { total: number; rows: InterventionRow[] }
 export type OutboundPlaybook = Exclude<Playbook, "inbound">;
 export interface AllocationPoint { at: string | null; weights: Record<OutboundPlaybook, number>; reason: string; by: string }
 
-export interface ActivityRow { id: string; type: string; actor: string; request: string | null; at: string }
+/** Safe, enumerated bits of an event's payload (payloads may hold customer text, so nothing free-form). */
+export interface ActivityDetail { to?: RequestStatus; agent?: AgentName; stage?: string; kind?: DecisionKind; action?: string; service?: string }
+export interface ActivityRow { id: string; type: string; actor: string; request: string | null; playbook: Playbook | null; detail: ActivityDetail | null; at: string }
 
 export interface LiveSnapshot {
   generatedAt: string;
+  /** Local UI mode (npm run dev:local): demo database, no Naïve / AgentMail / Monid calls. */
+  offline: boolean;
+  /** The database refused reads with Neon quota / suspension wording; the dashboard shows a banner and polls slowly. */
+  dbSuspended: boolean;
   overview: Panel<Overview>;
   funnel: Panel<FunnelStage[]>;
   board: Panel<Board>;
@@ -103,7 +125,16 @@ export interface LiveSnapshot {
   activity: Panel<ActivityRow[]>;
 }
 
-export interface PendingNaiveApproval { sessionId: string; agent: string; toolCallId: string; tool: string; args: unknown; parkedAt: string | null }
+export interface PendingNaiveApproval {
+  sessionId: string;
+  agent: string;
+  toolCallId: string;
+  tool: string;
+  args: unknown;
+  parkedAt: string | null;
+  /** False → a founder may only deny it here (not on the approvable list, or a signup/login). */
+  approvable: boolean;
+}
 export interface PendingOrder {
   id: string;
   request: string | null;

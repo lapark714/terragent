@@ -1,20 +1,24 @@
 /**
  * Every outbound email goes through here. Gates (enforced in code, in this order), each leaving a messages row:
- *   idempotency → recipient sanity → inbox armed (or recipient in TEAM_EMAILS) → suppression list → org daily cap
+ *   idempotency → offline mode (never calls AgentMail) → recipient sanity → inbox armed (or recipient in TEAM_EMAILS)
+ *   → suppression list → org daily cap
  *   → outreach/followup: approved template, allowed channel (email_direct only if OUTREACH_DIRECT_EMAIL_APPROVED),
- *     outreach daily cap, postal address, public https opt-out link → content (no unfilled placeholders, size)
- *   → AI disclosure + opt-out footer.
+ *     outreach daily cap, provider cool-down (first touches), postal address, public https opt-out link
+ *   → content (no unfilled placeholders, size) → AI disclosure + opt-out footer.
+ * AgentMail refusing the send (429 sending limits such as the new-org recipient ramp, 403 block list / suspension)
+ * is not an error for the agent: the row is 'blocked' with provider_limit:<code> / provider_rejected:<code>.
  * A row that was blocked or failed is re-checked when retried with the same key (e.g. after a founder arms the
- * inbox); a row that was sent is returned as-is, so a retry never sends twice (AgentMail also gets the key).
+ * inbox); a row that was sent is returned as-is, so a retry never sends twice (AgentMail also gets the key, so the
+ * SDK's own retries on 429/5xx can't send twice either).
  */
 import { createHash } from "node:crypto";
-import type { AgentMail } from "agentmail";
+import { AgentMailError, type AgentMail } from "agentmail";
 import { inboxAddress, isOwnAddress } from "../agentmail/config";
 import { agentmailErrorCode, mailApi, type SentIds } from "../agentmail/client";
 import { CAPS } from "../config";
 import { getDb } from "../db/client";
 import type { Inbox } from "../domain";
-import { envFlag, publicBaseUrl } from "../env";
+import { envFlag, isOffline, publicBaseUrl } from "../env";
 import { logEvent } from "../events";
 import { newId } from "../ids";
 import { getSetting, SETTING } from "../settings";
@@ -47,6 +51,11 @@ export interface SendEmailArgs {
 const STALE_SENDING = "10 minutes";
 /** AgentMail: whole request ≤ 6 MB (base64 inflates attachments by a third). Keep headroom. */
 const MAX_REQUEST_BYTES = 5_500_000;
+/**
+ * After AgentMail refuses a send for a recipient or daily limit (new-org ramp, NOTES H2g), more first touches to new
+ * people would be refused too, each after the SDK's Retry-After waits. So first touches pause this long locally.
+ */
+const PROVIDER_COOLDOWN = "1 hour";
 
 export async function sendEmail(args: SendEmailArgs): Promise<SendResult> {
   return deliver(args, null);
@@ -91,6 +100,16 @@ async function deliver(args: SendEmailArgs, reply: ReplyTarget | null): Promise<
   try {
     ids = await callAgentMail(args, to, content, reply);
   } catch (e) {
+    const refusal = providerRefusal(e);
+    if (refusal) {
+      // Nothing went out and no quota was used, so the row leaves the daily caps (sent_at NULL). Never retried here.
+      await db.query("UPDATE messages SET status = 'blocked', blocked_reason = $2, sent_at = NULL WHERE id = $1", [row.id, refusal.reason]);
+      await logEvent("email.blocked_by_provider", args.actor, {
+        message_id: row.id, inbox: args.inbox, to, kind: args.kind, channel: args.channel ?? "email", reason: refusal.reason,
+        http_status: refusal.status, limit: refusal.limit ?? null,
+      }, args.requestId);
+      return { status: "blocked", message_id: row.id, blocked_reason: refusal.reason };
+    }
     const failure = `send_failed:${agentmailErrorCode(e)}`;
     await db.query("UPDATE messages SET status = 'failed', blocked_reason = $2 WHERE id = $1", [row.id, failure]);
     await logEvent("email.failed", args.actor, { message_id: row.id, inbox: args.inbox, to, kind: args.kind, reason: failure }, args.requestId);
@@ -111,6 +130,8 @@ async function deliver(args: SendEmailArgs, reply: ReplyTarget | null): Promise<
 
 /** Returns the first gate that blocks the send, or null. */
 async function gate(args: SendEmailArgs, to: string, content: { text: string; html: string }): Promise<string | null> {
+  // Local UI work (npm run dev:local) and the demo database: the message is recorded, AgentMail is never called.
+  if (isOffline()) return "offline";
   if (!isValidEmail(to)) return "invalid_recipient";
   if (isOwnAddress(to)) return "recipient_is_own_inbox";
 
@@ -143,6 +164,7 @@ async function outreachGate(args: SendEmailArgs, to: string): Promise<string | n
     return "channel_not_allowed";
   }
   if (args.kind === "outreach" && (await sentToday("outreach")) >= CAPS.outreachTouchesPerDay) return "outreach_daily_cap_reached";
+  if (args.kind === "outreach" && (await providerCoolingDown())) return "provider_limit:cooldown";
   if (!postalAddress()) return "missing_postal_address";
   // A localhost opt-out link is dead for the recipient (CAN-SPAM); team test sends may still go out.
   if (!publicBaseUrl().startsWith("https://") && !teamEmails().has(to)) return "optout_url_not_public";
@@ -163,6 +185,34 @@ async function sentToday(kind?: string): Promise<number> {
     [midnight.toISOString(), kind ?? null],
   );
   return row.n;
+}
+
+/** A recipient or daily limit refusal from AgentMail within the cool-down window (any inbox, any kind). */
+async function providerCoolingDown(): Promise<boolean> {
+  const db = await getDb();
+  const rows = await db.query(
+    `SELECT 1 FROM events WHERE type = 'email.blocked_by_provider' AND created_at > now() - interval '${PROVIDER_COOLDOWN}'
+       AND payload->>'limit' IN ('recipient', 'daily') LIMIT 1`,
+  );
+  return rows.length > 0;
+}
+
+export interface ProviderRefusal { reason: string; status: number; code: string; limit?: "recipient" | "daily" | "rate" }
+
+/**
+ * AgentMail declining the send itself, as opposed to a failure: 429 rate_limit_exceeded ("Recipient limit exceeded"
+ * during the new-org ramp, "Daily send limit exceeded", API rate limits) → provider_limit:<code>; any 403 on a send
+ * (message_rejected: block list; account_suspended / inbox_suspended / pod_suspended; inbox_deactivated) →
+ * provider_rejected:<code>. Reads only the status, the code and which limit; never stores the body.
+ */
+export function providerRefusal(e: unknown): ProviderRefusal | null {
+  if (!(e instanceof AgentMailError) || (e.statusCode !== 429 && e.statusCode !== 403)) return null;
+  const body = (e.body ?? {}) as { code?: unknown; message?: unknown };
+  const code = typeof body.code === "string" && /^[A-Za-z0-9_.-]{1,64}$/.test(body.code) ? body.code : `http_${e.statusCode}`;
+  if (e.statusCode === 403) return { reason: `provider_rejected:${code}`, status: 403, code };
+  const text = typeof body.message === "string" ? body.message : "";
+  const limit = /recipient/i.test(text) ? "recipient" : /daily|per day/i.test(text) ? "daily" : "rate";
+  return { reason: `provider_limit:${code}`, status: 429, code, limit };
 }
 
 function requestBytes(args: SendEmailArgs, content: { text: string; html: string }): number {
@@ -258,6 +308,7 @@ async function findOriginal(inbox: Inbox, messageId: string): Promise<{ recipien
   if (row?.counterpart_email && row.thread_id) {
     return { recipient: row.meta?.reply_to ?? row.counterpart_email, subject: row.subject, threadId: row.thread_id };
   }
+  if (isOffline()) return null; // the send is blocked as offline anyway; don't call AgentMail for it
   try {
     const m = await mailApi().getMessage(inboxAddress(inbox), messageId);
     const sender = parseAddress(m.from).email;

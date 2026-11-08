@@ -1,7 +1,7 @@
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Db } from "../db/client";
 import type { ProspectInput } from "../domain";
-import { sampleCap, setPlaybookAllocation } from "./allocation";
+import { sampleCap, setPlaybookAllocation, withOneStarted } from "./allocation";
 import { createProspect, listProspects, requestFreeSample, sampleQuestion } from "./prospects";
 import { freshDb, insert, reset, seedProspect, seedSignal } from "./testing";
 
@@ -108,7 +108,7 @@ describe("requestFreeSample", () => {
     const res = await requestFreeSample({ prospectId: pro, actor: "sourcing" });
     expect(res).toMatchObject({
       already_requested: false,
-      cap: { playbook: "disasters", weight: 0.5, limit_per_run: 3, started_this_run: 1, limit_today: 20, started_today: 1, remaining: 2 },
+      cap: { playbook: "disasters", weight: 0.5, limit_per_run: 3, started_this_run: 1, limit_today: 6, started_today: 1, limit_today_total: 12, remaining: 2 },
     });
 
     const arg = mocks.createRequest.mock.calls[0][0];
@@ -130,23 +130,41 @@ describe("requestFreeSample", () => {
     await expect(requestFreeSample({ prospectId: await seedProspect(db, { playbook: "mining" }), actor: "sourcing" })).rejects.toThrow(/mining: its weight is 0/);
   });
 
-  it("counts a run as the last hour, and also caps the day", async () => {
+  const startedAt = (iso: string, n: number, playbook = "disasters") =>
+    db.query(
+      `INSERT INTO requests (id, source, playbook, question, is_free_sample, priority, created_at)
+       SELECT 'req_at' || md5($1 || $3 || g), 'signal', $3, 'q', true, 'background', $1::timestamptz FROM generate_series(1, $2) g`,
+      [iso, n, playbook],
+    );
+
+  it("counts a run as the last hour, and also caps the day (CAPS.freeSamplesPerDay × weight)", async () => {
     vi.useFakeTimers({ toFake: ["Date"] });
     vi.setSystemTime(new Date("2030-01-01T12:00:00Z"));
-    const at = (iso: string, n: number) =>
-      db.query(
-        `INSERT INTO requests (id, source, playbook, question, is_free_sample, priority, created_at)
-         SELECT 'req_at' || md5($1 || g), 'signal', 'disasters', 'q', true, 'background', $1::timestamptz FROM generate_series(1, $2) g`,
-        [iso, n],
-      );
-    await at("2029-12-31T23:30:00Z", 30); // yesterday: counts for nothing
-    await at("2030-01-01T09:00:00Z", 17); // today, an earlier run
-    await at("2030-01-01T11:30:00Z", 2); // this run
-    expect(await sampleCap("disasters")).toMatchObject({ limit_per_run: 3, started_this_run: 2, limit_today: 20, started_today: 19, remaining: 1 });
-    await at("2030-01-01T09:30:00Z", 1);
+    await startedAt("2029-12-31T23:30:00Z", 30); // yesterday: counts for nothing
+    await startedAt("2030-01-01T09:00:00Z", 3); // today, an earlier run
+    await startedAt("2030-01-01T11:30:00Z", 2); // this run
+    // disasters at the default weight 0.5: ceil(6 × 0.5) = 3 per run, ceil(12 × 0.5) = 6 per day.
+    expect(await sampleCap("disasters")).toMatchObject({ limit_per_run: 3, started_this_run: 2, limit_today: 6, started_today: 5, started_today_total: 5, remaining: 1 });
+    await startedAt("2030-01-01T09:30:00Z", 1);
     const full = await sampleCap("disasters");
     expect(full.remaining).toBe(0);
-    await expect(requestFreeSample({ prospectId: await seedProspect(db), actor: "sourcing" })).rejects.toThrow(/disasters: 20\/20 today/);
+    await expect(requestFreeSample({ prospectId: await seedProspect(db), actor: "sourcing" })).rejects.toThrow(/disasters: 6\/6 today at weight/);
+  });
+
+  it("caps the day across playbooks too, since the rounded-up shares add up to more than the cap", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2030-01-01T12:00:00Z"));
+    // Shares at the default weights: disasters 6, deforestation 4, mining 3 = 13 > 12.
+    await startedAt("2030-01-01T08:00:00Z", 4, "deforestation");
+    await startedAt("2030-01-01T08:00:00Z", 3, "mining");
+    await startedAt("2030-01-01T09:00:00Z", 5);
+    expect(await sampleCap("disasters")).toMatchObject({ limit_today: 6, started_today: 5, limit_today_total: 12, started_today_total: 12, remaining: 0 });
+    await expect(requestFreeSample({ prospectId: await seedProspect(db), actor: "sourcing" })).rejects.toThrow(/disasters: 12\/12 today across all playbooks/);
+  });
+
+  it("withOneStarted counts a new sample in every window", async () => {
+    const after = withOneStarted(await sampleCap("disasters"));
+    expect(after).toMatchObject({ started_this_run: 1, started_today: 1, started_today_total: 1, remaining: 2 });
   });
 
   it("starts one sample when two calls race for the same prospect", async () => {
