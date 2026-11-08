@@ -23,13 +23,15 @@ type Post =
   | { state: "done"; optionId: QuoteOptionId }
   | { state: "error"; message: string };
 
-export function QuoteChoice({ quote, requestId, contact, onAccepted }: {
+export function QuoteChoice({ quote, requestId, contact, onAccepted, onDemoAccept }: {
   quote: PublicQuote;
   requestId: string;
   /** The hello@ mail link, as Outcome renders it. */
   contact: React.ReactNode;
   /** Ask the page to poll now, so the server's view of the choice replaces the optimistic one sooner. */
   onAccepted?: () => void;
+  /** /demo only: record the choice locally instead of posting it. */
+  onDemoAccept?: (optionId: QuoteOptionId) => void;
 }) {
   const [post, setPost] = useState<Post>({ state: "idle" });
   // A ref, not state: two fast clicks land before React re-renders, and only the first may post.
@@ -77,6 +79,12 @@ export function QuoteChoice({ quote, requestId, contact, onAccepted }: {
     if (inFlight.current || !token) return;
     inFlight.current = true;
     setPost({ state: "posting", optionId });
+    if (onDemoAccept) {
+      await new Promise((done) => setTimeout(done, 700));
+      setPost({ state: "done", optionId });
+      onDemoAccept(optionId);
+      return;
+    }
     let r: AcceptResult;
     try {
       const res = await fetch("/api/quotes/accept", {

@@ -11,12 +11,19 @@ import { coordsPlace, reverse, type Place } from "./geocode";
 import type { GlobeTarget } from "./HeroGlobe";
 import { GlobeStill, HeroGlobeLoader } from "./HeroGlobeLoader";
 import { PlaceSearch } from "./PlaceSearch";
+import { SITES } from "@/lib/demo/yc";
 
 const EXAMPLES: { text: string; place: Place }[] = [
   { text: "Lahaina, Maui", place: { lat: 20.874, lng: -156.678, label: "Lahaina", detail: "Maui, Hawaii, United States", kind: "place", altitude: 0.08 } },
   { text: "Rondônia farmland", place: { lat: -9.97, lng: -63.03, label: "9.970° S, 63.030° W", detail: "Rondônia, Brazil", kind: "coords", altitude: 0.08 } },
   { text: "Port Arthur, Texas", place: { lat: 29.885, lng: -93.94, label: "Port Arthur", detail: "Texas, United States", kind: "place", altitude: 0.1 } },
 ];
+
+/** /demo only: the two YC offices (OpenStreetMap positions) lead the chips. */
+const DEMO_EXAMPLES: { text: string; place: Place }[] = [SITES.sf, SITES.mv].map((s) => ({
+  text: `YC, ${s.short}`,
+  place: { lat: s.lat, lng: s.lng, label: s.name, detail: s.detail, kind: "address", altitude: 0.04 },
+}));
 
 const noSubscribe = () => () => {};
 
@@ -31,7 +38,8 @@ function hasWebGL(): boolean {
   }
 }
 
-export function GlobeAsk({ hello }: { hello: string }) {
+/** `demo` (the /demo page): YC example chips, and the ask sheet plays a scripted run instead of posting a request. */
+export function GlobeAsk({ hello, demo = false }: { hello: string; demo?: boolean }) {
   const [phase, setPhase] = useState<"where" | "details">("where");
   const [place, setPlace] = useState<Place | null>(null);
   const [placeText, setPlaceText] = useState("");
@@ -120,7 +128,7 @@ export function GlobeAsk({ hello }: { hello: string }) {
               Or tap the globe to drop a pin
             </p>
             <div className="flex flex-wrap justify-center gap-2 lg:justify-start">
-              {EXAMPLES.map((ex) => (
+              {(demo ? DEMO_EXAMPLES : EXAMPLES).map((ex) => (
                 <button key={ex.text} type="button" onClick={() => goTo(ex.place)} tabIndex={details ? -1 : 0}
                   className="rounded-full border border-line-strong bg-space/60 px-3 py-1.5 text-sm text-fg-2 backdrop-blur-sm transition-colors hover:border-fg-3 hover:text-fg">
                   {ex.text}
@@ -134,7 +142,7 @@ export function GlobeAsk({ hello }: { hello: string }) {
       {/* Step 2: details sheet */}
       {details && (
         <div className="pointer-events-none absolute inset-x-0 top-[calc(40svh-1.25rem)] bottom-0 z-20 flex justify-center sm:top-0 sm:right-6 sm:left-auto sm:w-[min(28rem,40vw)] sm:items-center">
-          <AskSheet key={place ? `${place.lat},${place.lng}` : placeText} place={place} placeText={placeText} hello={hello} onBack={back} />
+          <AskSheet key={place ? `${place.lat},${place.lng}` : placeText} place={place} placeText={placeText} hello={hello} onBack={back} demo={demo} />
         </div>
       )}
 

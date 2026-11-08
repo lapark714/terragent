@@ -9,6 +9,7 @@ import Link from "next/link";
 import { ConfidenceMeter } from "@/components/report/ConfidenceMeter";
 import { CopyLink } from "@/components/report/CopyLink";
 import type { RequestProgress } from "@/lib/dashboard/public";
+import type { QuoteOptionId } from "@/lib/domain";
 import { Elapsed } from "./Elapsed";
 import { showsQuoteChoice } from "./progress";
 import { QuoteChoice } from "./QuoteChoice";
@@ -40,11 +41,13 @@ function Frame({ tone, eyebrow, live = true, children }: {
   );
 }
 
-export function Outcome({ progress: p, hello, onQuoteAccepted }: {
+export function Outcome({ progress: p, hello, onQuoteAccepted, onDemoAccept }: {
   progress: RequestProgress;
   hello: string;
   /** Called after an Accept button posts, so the page can poll at once. */
   onQuoteAccepted?: () => void;
+  /** /demo only: QuoteChoice records the choice locally instead of posting it. */
+  onDemoAccept?: (optionId: QuoteOptionId) => void;
 }) {
   const mail = (
     <a href={`mailto:${hello}?subject=${encodeURIComponent(`About ${p.id}`)}`} className={linkClass}>
@@ -113,7 +116,7 @@ export function Outcome({ progress: p, hello, onQuoteAccepted }: {
   if (p.quote && showsQuoteChoice(p)) {
     return (
       <Frame tone="wait" eyebrow="Your quote" live={false}>
-        <QuoteChoice quote={p.quote} requestId={p.id} contact={mail} onAccepted={onQuoteAccepted} />
+        <QuoteChoice quote={p.quote} requestId={p.id} contact={mail} onAccepted={onQuoteAccepted} onDemoAccept={onDemoAccept} />
       </Frame>
     );
   }
