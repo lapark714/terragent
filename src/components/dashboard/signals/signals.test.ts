@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
-import type { FunnelStage, GlobeSignal } from "@/lib/dashboard/types";
-import { conversion, feedCounts, feedLabel } from "./signals";
+import { countGroups, outreachStatus, rate, sortProspects, type SignalProspect, totalConversion } from "./outreach";
+import { feedLabel } from "./signals";
 
-const sig = (feed: string, layer: GlobeSignal["layer"]): GlobeSignal => ({ id: Math.random().toString(), lat: 0, lng: 0, layer, title: "t", feed, severity: null, at: "2026-11-07T00:00:00Z" });
+const pro = (id: string, status: string, score: number | null = null): SignalProspect => ({ id, company: id, domain: null, role: null, asset: null, score, status, channel: null, updatedAt: "" });
 
 describe("feedLabel", () => {
   it("names known feeds and tidies unknown ones", () => {
@@ -11,22 +11,21 @@ describe("feedLabel", () => {
   });
 });
 
-describe("feedCounts", () => {
-  it("counts per feed and layer, biggest first", () => {
-    expect(feedCounts([sig("news", "mining"), sig("gfw", "forest"), sig("gfw", "forest"), sig("news", "disasters")])).toEqual([
-      { feed: "gfw", layer: "forest", n: 2 },
-      { feed: "news", layer: "disasters", n: 1 },
-      { feed: "news", layer: "mining", n: 1 },
-    ]);
+describe("outreach", () => {
+  it("groups statuses the way a founder reads them", () => {
+    expect(outreachStatus("emailed").group).toBe("reached");
+    expect(outreachStatus("paid").group).toBe("responded");
+    expect(outreachStatus("sample_ready").group).toBe("pending");
+    expect(outreachStatus("something_new")).toEqual({ label: "something new", group: "pending" });
+    expect(countGroups([pro("a", "replied"), pro("b", "emailed"), pro("c", "matched"), pro("d", "opted_out")])).toEqual({ responded: 1, reached: 1, pending: 1, closed: 1 });
   });
-});
-
-describe("conversion", () => {
-  it("follows each outbound playbook through the funnel", () => {
-    const stage = (key: FunnelStage["key"], d: number, f: number, m: number): FunnelStage => ({ key, total: d + f + m, byPlaybook: { disasters: d, deforestation: f, mining: m, inbound: 0 } });
-    const rows = conversion([stage("signals", 20, 10, 0), stage("touches", 4, 0, 0), stage("replies", 2, 0, 0), stage("paid", 1, 0, 0)]);
-    expect(rows[0]).toMatchObject({ playbook: "disasters", signals: 20, touches: 4, replies: 2, paid: 1, prospects: 0, replyRate: 0.5, repliesPer100: 10 });
-    expect(rows[1]).toMatchObject({ playbook: "deforestation", replyRate: null, repliesPer100: 0 });
-    expect(rows[2]).toMatchObject({ playbook: "mining", replyRate: null, repliesPer100: null });
+  it("lists responders first, then best fit", () => {
+    expect(sortProspects([pro("a", "matched", 0.9), pro("b", "emailed", 0.5), pro("c", "replied", 0.4), pro("d", "matched", 0.95)]).map((p) => p.id)).toEqual(["c", "b", "d", "a"]);
+  });
+  it("totals feeds and formats rates", () => {
+    const row = { feed: "nws", playbook: "disasters" as const, signals: 4, matched: 2, reached: 2, replied: 1, quoted: 1, paid: 0, optedOut: 0 };
+    expect(totalConversion([row, { ...row, feed: "firms", paid: 1 }])).toEqual({ signals: 8, matched: 4, reached: 4, replied: 2, quoted: 2, paid: 1, optedOut: 0 });
+    expect(rate(1, 4)).toBe("25%");
+    expect(rate(1, 0)).toBe("–");
   });
 });

@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { MissionControl } from "@/components/dashboard/MissionControl";
-import { cachedApprovals, cachedGlobe, cachedLiveSnapshot } from "@/lib/dashboard/cache";
+import { cachedGlobe, cachedLiveSnapshot } from "@/lib/dashboard/cache";
 
 export const dynamic = "force-dynamic";
 export const metadata: Metadata = {
@@ -10,10 +10,6 @@ export const metadata: Metadata = {
 
 /** Server-renders from the same short cache the JSON endpoints use, so a page load is not an extra database read. */
 export default async function DashboardPage() {
-  const [live, globe, approvals] = await Promise.all([
-    cachedLiveSnapshot(),
-    cachedGlobe().catch(() => null),
-    cachedApprovals().catch(() => null),
-  ]);
-  return <MissionControl initialLive={live} initialGlobe={globe} initialApprovals={approvals} />;
+  const [live, globe] = await Promise.all([cachedLiveSnapshot(), cachedGlobe().catch(() => null)]);
+  return <MissionControl initialLive={live} initialGlobe={globe} />;
 }
