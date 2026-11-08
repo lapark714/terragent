@@ -1,6 +1,6 @@
 "use client";
 /**
- * The business side of mission control, for founders: deals and money first, then what we've made, how our price
+ * Operations (the /dashboard tab), for founders: deals and money first, then what we've made, how our price
  * compares, and where the data comes from. Reads the same cached endpoints as /dashboard; nothing new is queried.
  */
 import type { Approvals, LiveSnapshot, MarketResponse } from "@/lib/dashboard/types";
@@ -52,10 +52,10 @@ export function SalesConsole({ initialLive, initialApprovals, initialMarket }: {
 
   return (
     <div className="flex flex-col gap-2 pb-2">
-      <DashboardHeader current="business" />
+      <DashboardHeader current="operations" />
       <header className="flex flex-col gap-2.5 px-2">
 
-        <dl className="instrument grid-cols-2 overflow-hidden rounded-lg sm:grid-cols-3 xl:grid-cols-6" aria-label="Business overview">
+        <dl className="instrument grid-cols-2 overflow-hidden rounded-lg sm:grid-cols-3 xl:grid-cols-6" aria-label="Operations overview">
           <Kpi label="Open deals" value={money ? usd(totals.open) : dash} note={money && `${count(totals.byStage.quoted.n + totals.byStage.founder.n + totals.byStage.owed.n)} quoted or owed`} tone="bg-inbound" />
           <Kpi label="Delivered, not paid" value={money ? usd(totals.owed) : dash} note={money && `${count(totals.byStage.owed.n)} to follow up`} tone="bg-alert" />
           <Kpi label="Quotes waiting on a founder" value={money ? count(totals.byStage.founder.n) : dash} note={money && (totals.byStage.founder.value ? `${usd(totals.byStage.founder.value)} above the auto-approve cap` : "none above the cap")} tone="bg-human" />

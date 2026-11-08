@@ -33,7 +33,7 @@ export function DealsPanel({ deals }: { deals: Deal[] }) {
     <div className="flex h-full min-h-0 flex-col gap-3">
       <div role="group" aria-label="Filter deals by stage" className="flex flex-wrap gap-1.5">
         <FilterButton active={filter === "all"} onClick={() => setFilter("all")}>
-          All <span className="tabular-nums text-fg-3">{deals.length}</span>
+          All
         </FilterButton>
         {DEAL_STAGES.filter((s) => totals.byStage[s].n > 0).map((s) => (
           <FilterButton key={s} active={filter === s} onClick={() => setFilter(s)}>

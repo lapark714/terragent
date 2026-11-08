@@ -1,10 +1,10 @@
-/** The dashboard's top bar: the wordmark, and under it the switch between the Signal Engine and Business tabs. */
+/** The dashboard's top bar: the wordmark, and under it the switch between the Operations and Signal Engine tabs. */
 import Link from "next/link";
 import { Wordmark } from "../site/Wordmark";
 
 const TABS = [
-  { key: "signals", label: "Signal Engine", href: "/dashboard" },
-  { key: "business", label: "Business", href: "/dashboard/sales" },
+  { key: "operations", label: "Operations", href: "/dashboard" },
+  { key: "signals", label: "Signal Engine", href: "/dashboard/signals" },
 ] as const;
 
 export type DashboardTab = (typeof TABS)[number]["key"];

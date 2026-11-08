@@ -89,11 +89,4 @@ export function sortProspects(prospects: SignalProspect[]): SignalProspect[] {
   return [...prospects].sort((a, b) => rank(a) - rank(b) || (b.score ?? 0) - (a.score ?? 0));
 }
 
-/** All feeds together, for the total row. */
-export function totalConversion(rows: FeedConversion[]): Omit<FeedConversion, "feed" | "playbook"> {
-  const t = { signals: 0, matched: 0, reached: 0, replied: 0, quoted: 0, paid: 0, optedOut: 0 };
-  for (const r of rows) for (const k of Object.keys(t) as (keyof typeof t)[]) t[k] += r[k];
-  return t;
-}
-
 export const rate = (n: number, of: number): string => (of > 0 ? `${Math.round((n / of) * 100)}%` : "–");

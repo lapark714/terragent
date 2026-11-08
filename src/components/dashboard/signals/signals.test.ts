@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { countGroups, outreachStatus, rate, sortProspects, type SignalProspect, totalConversion } from "./outreach";
+import { countGroups, outreachStatus, rate, sortProspects, type SignalProspect } from "./outreach";
 import { feedLabel } from "./signals";
 
 const pro = (id: string, status: string, score: number | null = null): SignalProspect => ({ id, company: id, domain: null, role: null, asset: null, score, status, channel: null, updatedAt: "" });
@@ -22,10 +22,17 @@ describe("outreach", () => {
   it("lists responders first, then best fit", () => {
     expect(sortProspects([pro("a", "matched", 0.9), pro("b", "emailed", 0.5), pro("c", "replied", 0.4), pro("d", "matched", 0.95)]).map((p) => p.id)).toEqual(["c", "b", "d", "a"]);
   });
-  it("totals feeds and formats rates", () => {
-    const row = { feed: "nws", playbook: "disasters" as const, signals: 4, matched: 2, reached: 2, replied: 1, quoted: 1, paid: 0, optedOut: 0 };
-    expect(totalConversion([row, { ...row, feed: "firms", paid: 1 }])).toEqual({ signals: 8, matched: 4, reached: 4, replied: 2, quoted: 2, paid: 1, optedOut: 0 });
+  it("formats rates", () => {
     expect(rate(1, 4)).toBe("25%");
     expect(rate(1, 0)).toBe("–");
+  });
+});
+
+describe("urgencyOf", () => {
+  it("treats live events as urgent and the rest as slow-moving", async () => {
+    const { urgencyOf } = await import("./signals");
+    expect(urgencyOf("usgs_quake")).toBe("urgent");
+    expect(urgencyOf("blm_claims")).toBe("slow");
+    expect(urgencyOf("brand_new_feed")).toBe("slow");
   });
 });

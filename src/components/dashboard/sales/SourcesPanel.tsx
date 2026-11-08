@@ -30,7 +30,7 @@ export function SourcesPanel({ spend, sources, orders }: { spend: Money["spend"]
 
   return (
     <div className="grid h-full min-h-0 grid-cols-1 gap-5 md:grid-cols-2 xl:grid-cols-4">
-      <Sub title={spend ? `Spend by service, ${usd(spend.total)} in all` : "Spend by service"}>
+      <Sub title="Spend by service">
         {spend ? (
           <ul className="flex flex-col gap-1.5">
             {services.map((s) => (

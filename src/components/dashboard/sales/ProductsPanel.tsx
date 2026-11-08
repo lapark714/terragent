@@ -19,7 +19,6 @@ export function ProductsPanel({ products, indexCells }: { products: Product[]; i
   const paidOnes = products.filter((p) => p.paid > 0);
   const samples = products.filter((p) => p.sample).length;
   const collected = paidOnes.reduce((s, p) => s + p.paid, 0);
-  const costOfPaid = paidOnes.reduce((s, p) => s + p.cost, 0);
 
   return (
     <div className="flex h-full min-h-0 flex-col gap-3">
@@ -59,11 +58,6 @@ export function ProductsPanel({ products, indexCells }: { products: Product[]; i
           </tbody>
         </table>
       </div>
-      {paidOnes.length > 0 && (
-        <p className="text-xs text-fg-3">
-          Paid reports brought in {usd(collected)} against {usd(costOfPaid)} to make them.
-        </p>
-      )}
     </div>
   );
 }

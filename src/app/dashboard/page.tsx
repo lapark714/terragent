@@ -1,15 +1,19 @@
 import type { Metadata } from "next";
-import { MissionControl } from "@/components/dashboard/MissionControl";
-import { cachedGlobe, cachedLiveSnapshot } from "@/lib/dashboard/cache";
+import { SalesConsole } from "@/components/dashboard/sales/SalesConsole";
+import { cachedApprovals, cachedLiveSnapshot, cachedMarket } from "@/lib/dashboard/cache";
 
 export const dynamic = "force-dynamic";
 export const metadata: Metadata = {
-  title: "Signal Engine",
-  description: "Terragent's signal engine, run by AI agents: the signals they pick up around the world, and which ones turn into business.",
+  title: "Operations",
+  description: "Terragent's operations, run by AI agents: deals, what we've delivered, our price against today's alternatives, and where the data comes from.",
 };
 
-/** Server-renders from the same short cache the JSON endpoints use, so a page load is not an extra database read. */
-export default async function DashboardPage() {
-  const [live, globe] = await Promise.all([cachedLiveSnapshot(), cachedGlobe().catch(() => null)]);
-  return <MissionControl initialLive={live} initialGlobe={globe} />;
+/** The dashboard's main tab. Server-renders from the same short cache the JSON endpoints use. */
+export default async function OperationsPage() {
+  const [live, approvals, market] = await Promise.all([
+    cachedLiveSnapshot(),
+    cachedApprovals().catch(() => null),
+    cachedMarket().catch(() => null),
+  ]);
+  return <SalesConsole initialLive={live} initialApprovals={approvals} initialMarket={market} />;
 }
