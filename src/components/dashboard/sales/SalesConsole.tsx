@@ -3,11 +3,10 @@
  * The business side of mission control, for founders: deals and money first, then what we've made, how our price
  * compares, and where the data comes from. Reads the same cached endpoints as /dashboard; nothing new is queried.
  */
-import Link from "next/link";
 import type { Approvals, LiveSnapshot, MarketResponse } from "@/lib/dashboard/types";
 import { count, usd } from "../../format";
-import { Wordmark } from "../../site/Wordmark";
 import { usePoll } from "../../usePoll";
+import { DashboardHeader } from "../DashboardHeader";
 import { keepLastGood } from "../keepLastGood";
 import { Panel, PanelData, Quiet } from "../Panel";
 import { DealsPanel } from "./DealsPanel";
@@ -28,16 +27,6 @@ function Kpi({ label, value, note, tone }: { label: string; value: React.ReactNo
       <dd className="stretch-semi truncate text-[1.35rem] leading-tight font-semibold tabular-nums">{value}</dd>
       {note && <dd className="truncate text-xs text-fg-3">{note}</dd>}
     </div>
-  );
-}
-
-function Nav() {
-  const item = "rounded-full px-3 py-1 text-xs transition-colors";
-  return (
-    <nav aria-label="Dashboard" className="flex items-center gap-1 rounded-full border border-line-strong p-0.5">
-      <Link href="/dashboard" className={`${item} text-fg-2 hover:text-fg`}>Mission control</Link>
-      <span aria-current="page" className={`${item} bg-raised text-fg`}>Business</span>
-    </nav>
   );
 }
 
@@ -63,11 +52,8 @@ export function SalesConsole({ initialLive, initialApprovals, initialMarket }: {
 
   return (
     <div className="flex flex-col gap-2 pb-2">
-      <header className="flex flex-col gap-2.5 px-2 pt-3">
-        <div className="flex flex-col items-start gap-2.5 px-2">
-          <Wordmark />
-          <Nav />
-        </div>
+      <DashboardHeader current="business" />
+      <header className="flex flex-col gap-2.5 px-2">
 
         <dl className="instrument grid-cols-2 overflow-hidden rounded-lg sm:grid-cols-3 xl:grid-cols-6" aria-label="Business overview">
           <Kpi label="Open deals" value={money ? usd(totals.open) : dash} note={money && `${count(totals.byStage.quoted.n + totals.byStage.founder.n + totals.byStage.owed.n)} quoted or owed`} tone="bg-inbound" />

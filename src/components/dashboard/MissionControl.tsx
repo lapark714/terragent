@@ -1,25 +1,23 @@
 "use client";
 /**
- * Mission control: the demo screen. Polls three JSON endpoints (live panels every 6 s, globe every 8 s,
- * approvals every 10 s) starting from server-rendered data; the server answers them from a short cache, so
- * viewers never multiply database reads. The first screen (overview strip + instrument grid) fills one 16:9
- * display at xl; what is waiting on a founder sits below it.
+ * Signal Engine (the /dashboard tab): where business could come from. The globe of signals, the funnel, which
+ * playbooks convert, the latest signals and their feeds, and where the coordinator puts effort. Polls three JSON
+ * endpoints (live every 6 s, globe every 8 s, approvals every 10 s) from server-rendered data; the server answers
+ * them from a short cache. The first screen fills one 16:9 display at xl; what is waiting on a founder sits below.
  */
 import type { Approvals, GlobeData, LiveSnapshot } from "@/lib/dashboard/types";
 import { usePoll } from "../usePoll";
 import { keepLastGood } from "./keepLastGood";
-import { ActivityFeed } from "./ActivityFeed";
 import { AllocationChart } from "./AllocationChart";
 import { ApprovalsPanel } from "./ApprovalsPanel";
-import { BoardPanel } from "./BoardPanel";
 import { DashboardHeader } from "./DashboardHeader";
-import { DecisionLog, freeVsPaidSummary } from "./DecisionLog";
 import { FunnelPanel } from "./FunnelPanel";
 import { GlobePanel } from "./GlobePanel";
-import { InterventionsPanel } from "./InterventionsPanel";
 import { PlaybookLegend } from "./Legend";
-import { MoneyPanel } from "./MoneyPanel";
 import { Panel, PanelData, Quiet } from "./Panel";
+import { ConversionPanel } from "./signals/ConversionPanel";
+import { SignalFeedPanel } from "./signals/SignalFeedPanel";
+import { SignalSourcesPanel } from "./signals/SourcesPanel";
 
 /** Slow down while the database is paused: no point asking every few seconds, and no retry loop. */
 const PAUSED_POLL_MS = 60_000;
@@ -50,13 +48,12 @@ export function MissionControl({ initialLive, initialGlobe, initialApprovals }: 
   const globe = usePoll<GlobeData>("/api/dashboard/globe", suspended ? PAUSED_POLL_MS : 8_000, initialGlobe);
   const approvals = usePoll<Approvals>("/api/dashboard/approvals", suspended ? PAUSED_POLL_MS : 10_000, initialApprovals);
   const s = live.data;
-  const decisionsMeta = s?.decisions.ok ? freeVsPaidSummary(s.decisions.data) : null;
   const offline = s?.offline === true;
 
   return (
     <div className="flex flex-col pb-2">
       <div className="flex flex-col gap-2 xl:h-dvh xl:min-h-[44rem]">
-        <DashboardHeader overview={s?.overview} money={s?.money} offline={offline} updatedAt={live.updatedAt} error={live.error} />
+        <DashboardHeader current="signals" />
         {suspended && (
           <Banner tone="alert" title="Database paused — quota hit; a founder must check Neon (NOTES H4c).">
             Neon suspends compute when a billing quota is reached. Panels keep their last numbers and check again once a minute; nothing retries in a loop.
@@ -68,24 +65,18 @@ export function MissionControl({ initialLive, initialGlobe, initialApprovals }: 
             <Panel title="Signal funnel" meta={<PlaybookLegend />}>
               <PanelData result={s?.funnel}>{(f) => <FunnelPanel stages={f} />}</PanelData>
             </Panel>
-            <Panel title="Live board" meta="Requests by step, with the agent on each" className="min-h-[24rem] xl:min-h-0">
-              <PanelData result={s?.board}>{(b) => <BoardPanel board={b} />}</PanelData>
+            <Panel title="What's converting" meta="Each playbook's signals, followed to payment" className="min-h-[18rem] xl:min-h-0">
+              <PanelData result={s?.funnel}>{(f) => <ConversionPanel stages={f} />}</PanelData>
             </Panel>
           </div>
-          <Panel title="Decision log" meta={decisionsMeta && `Free vs paid: ${decisionsMeta}`} className="h-[26rem] xl:col-span-5 xl:h-auto">
-            <PanelData result={s?.decisions}>{(d) => <DecisionLog decisions={d} />}</PanelData>
+          <Panel title="Latest signals" meta="What the sourcing agent picked up" className="h-[26rem] xl:col-span-10 xl:h-auto">
+            {globe.data ? <SignalFeedPanel signals={globe.data.signals} /> : <Quiet>Waiting for the first update.</Quiet>}
           </Panel>
-          <Panel title="Activity" meta="Newest first" className="h-[26rem] xl:col-span-5 xl:h-auto">
-            <PanelData result={s?.activity}>{(a) => <ActivityFeed rows={a} />}</PanelData>
+          <Panel title="Signal sources" meta="Signals per feed" className="h-[22rem] xl:col-span-6 xl:h-auto">
+            {globe.data ? <SignalSourcesPanel signals={globe.data.signals} /> : <Quiet>Waiting for the first update.</Quiet>}
           </Panel>
-          <Panel title="Spend vs revenue" className="h-[26rem] xl:col-span-5 xl:h-auto">
-            <PanelData result={s?.money}>{(m) => <MoneyPanel money={m} offline={offline} />}</PanelData>
-          </Panel>
-          <Panel title="Playbook effort" meta="Set by the coordinator" className="xl:col-span-5">
+          <Panel title="Playbook effort" meta="Set by the coordinator" className="xl:col-span-8">
             <PanelData result={s?.allocation}>{(a) => <AllocationChart points={a} />}</PanelData>
-          </Panel>
-          <Panel title="Intervention log" className="h-[26rem] xl:col-span-4 xl:h-auto">
-            <PanelData result={s?.interventions}>{(i) => <InterventionsPanel data={i} />}</PanelData>
           </Panel>
         </main>
       </div>

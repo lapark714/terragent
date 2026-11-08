@@ -4,8 +4,8 @@ import { cachedApprovals, cachedGlobe, cachedLiveSnapshot } from "@/lib/dashboar
 
 export const dynamic = "force-dynamic";
 export const metadata: Metadata = {
-  title: "Mission control",
-  description: "Terragent's agents at work: the Earth index, the funnel, the board, every decision and every human step.",
+  title: "Signal Engine",
+  description: "Terragent's signal engine, run by AI agents: the signals they pick up around the world, and which ones turn into business.",
 };
 
 /** Server-renders from the same short cache the JSON endpoints use, so a page load is not an extra database read. */

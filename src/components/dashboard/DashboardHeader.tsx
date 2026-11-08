@@ -1,95 +1,27 @@
-"use client";
-/**
- * Wordmark, whether the feed is live, and the overview strip: the eight numbers a judge asks about first.
- * Every figure is a count of something that happened (spec §11: count honestly, never inflate).
- */
+/** The dashboard's top bar: the wordmark, and under it the switch between the Signal Engine and Business tabs. */
 import Link from "next/link";
-import type { Money, Overview, Panel } from "@/lib/dashboard/types";
-import { count, duration, usd } from "../format";
 import { Wordmark } from "../site/Wordmark";
 
-function Kpi({ label, value, note, human, accent }: {
-  label: string;
-  value: React.ReactNode;
-  note?: React.ReactNode;
-  human?: boolean;
-  accent?: string;
-}) {
+const TABS = [
+  { key: "signals", label: "Signal Engine", href: "/dashboard" },
+  { key: "business", label: "Business", href: "/dashboard/sales" },
+] as const;
+
+export type DashboardTab = (typeof TABS)[number]["key"];
+
+export function DashboardHeader({ current }: { current: DashboardTab }) {
   return (
-    <div className="flex min-w-0 flex-col gap-0.5 bg-panel px-3.5 py-2.5">
-      <dt className="flex items-center gap-1.5 truncate text-xs text-fg-3">
-        {human && <span className="size-2 shrink-0 rounded-full border-[1.5px] border-human" aria-hidden />}
-        {accent && <span className={`size-2 shrink-0 rounded-full ${accent}`} aria-hidden />}
-        {label}
-      </dt>
-      <dd className="stretch-semi truncate text-[1.35rem] leading-tight font-semibold tabular-nums">{value}</dd>
-      {note && <dd className="truncate text-xs text-fg-3">{note}</dd>}
-    </div>
-  );
-}
-
-const pct = (n: number, of: number) => (of > 0 ? `${Math.round((n / of) * 100)}%` : "–");
-
-export function DashboardHeader({ overview, money, offline }: {
-  overview: Panel<Overview> | undefined;
-  money: Panel<Money> | undefined;
-  offline: boolean;
-  updatedAt: number | null;
-  error: string | null;
-}) {
-  const o = overview?.ok ? overview.data : null;
-  const m = money?.ok ? money.data : null;
-  const dash = "–";
-
-  return (
-    <header className="flex flex-col gap-2.5 px-2 pt-3">
-      <div className="flex flex-col items-start gap-2.5 px-2">
-        <Wordmark />
-        <nav aria-label="Dashboard" className="flex items-center gap-1 rounded-full border border-line-strong p-0.5 text-xs">
-          <span aria-current="page" className="rounded-full bg-raised px-3 py-1 text-fg">Mission control</span>
-          <Link href="/dashboard/sales" className="rounded-full px-3 py-1 text-fg-2 transition-colors hover:text-fg">Business</Link>
-        </nav>
-      </div>
-
-      <dl className="instrument grid-cols-2 overflow-hidden rounded-lg sm:grid-cols-4 xl:grid-cols-8" aria-label="Overview">
-        <Kpi label="Requests today" value={o ? count(o.inboundToday) : dash} note={o && `${count(o.inbound)} all time, ${count(o.active)} in progress`} accent="bg-inbound" />
-        <Kpi
-          label="Reports delivered"
-          value={o ? count(o.reportsDelivered) : dash}
-          note={o && `${count(o.verifiedReports)} verified, median answer ${duration(o.medianAnswerSeconds)}`}
-        />
-        <Kpi label="Free samples" value={o ? count(o.samples) : dash} note={o && `${count(o.samplesToday)} started today`} />
-        <Kpi
-          label="First touches"
-          value={o ? count(o.firstTouches) : dash}
-          note={o && (o.touchesHeld ? `${count(o.touchesHeld)} more held back` : "contact forms and email")}
-        />
-        <Kpi label="Replies" value={o ? count(o.replies) : dash} note={o && `${pct(o.replies, o.firstTouches)} of first touches`} />
-        <Kpi
-          label="Spend vs revenue"
-          value={
-            m ? (
-              <>
-                {usd(m.spend.total)} <span className="text-base font-normal text-fg-3">vs</span> {usd(m.revenue.paid)}
-              </>
-            ) : (
-              dash
-            )
-          }
-          note={m && `paid; ${usd(m.revenue.committed)} committed, ${usd(m.revenue.stated)} stated`}
-        />
-        <Kpi
-          label="Naïve balance"
-          value={m?.naiveBalanceUsd !== null && m?.naiveBalanceUsd !== undefined ? usd(m.naiveBalanceUsd) : dash}
-          note={offline ? "not called in local mode" : m?.spend.naiveSource === "ledger" ? "live from the Naïve ledger" : "ledger not connected here"}
-        />
-        <Kpi
-          label="Human interventions"
-          value={o ? count(o.interventions) : dash}
-          note={o && (o.interventions < 10 ? "goal: fewer than 10" : "over the goal of 10")}
-          human
-        />
-      </dl>
+    <header className="flex flex-col items-start gap-2.5 px-4 pt-3">
+      <Wordmark />
+      <nav aria-label="Dashboard" className="flex items-center gap-1 rounded-full border border-line-strong p-0.5 text-xs">
+        {TABS.map((t) =>
+          t.key === current ? (
+            <span key={t.key} aria-current="page" className="rounded-full bg-raised px-3 py-1 text-fg">{t.label}</span>
+          ) : (
+            <Link key={t.key} href={t.href} className="rounded-full px-3 py-1 text-fg-2 transition-colors hover:text-fg">{t.label}</Link>
+          ),
+        )}
+      </nav>
     </header>
   );
 }
