@@ -68,6 +68,12 @@ _This table is refreshed after platform research; see docs/platform/README.md fo
   warns, and the search tells Acquisition to shrink the AOI or say so in the quote. Known limit: on grids of 40 m or
   coarser (AOIs over about 20 km across), the two tiles can differ by about 0.02 reflectance at the seam, visible as a
   faint step in true-colour images; measured live, change metrics are much less affected.
+- **2026-11-08 — Overnight outreach push (Laurence): volume over deals.** Sourcing sweeps hourly per playbook; limits are env
+  (`CAP_FREE_SAMPLES_PER_RUN=10`, `CAP_FREE_SAMPLES_PER_DAY=60`, `CAP_OUTREACH_PER_DAY=100`). Prospect replies only gather what
+  people would pay (no quotes or work); see `scripts/overnight-stats.ts`. Cold email goes from the Naïve inbox, never AgentMail
+  (Laurence: Naïve supports cold outreach), with a 3-minute inbox sync for replies and opt-outs. One touch per business stays.
+  **Founder check:** docs/platform/email-stack-change.md notes 459 Lagunita Drive is Stanford's student union; CAN-SPAM needs an
+  address where mail actually reaches us.
 - **2026-11-08 — Analytics runs server-side (`terragent.run_analysis`).** The flag refuses bash, so the backend runs the
   pipeline on its own Naïve computer `terragent-pipeline`, uploads the images and saves the result (or records the
   monitor re-check). Analytics has no computer tools any more.
