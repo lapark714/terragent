@@ -2,7 +2,7 @@
  * The Operations tab, derived from the same dashboard endpoints the Signal Engine reads (no new queries).
  * Pure functions: the console calls them on every poll, and the tests feed them fixtures.
  */
-import type { Board, BoardRequest, Decisions, MarketPrices, Money } from "@/lib/dashboard/types";
+import type { Board, BoardRequest, Decisions, Money } from "@/lib/dashboard/types";
 import type { Playbook, RequestStatus } from "@/lib/domain";
 
 /** The four sections of the Deals panel, in the order a request moves through them. */
@@ -138,16 +138,23 @@ export interface Product {
   cost: number;
   price: number | null;
   paid: number;
+  sources: string[];
+  paidData: boolean | null;
 }
 
-/** Everything delivered: answers to customers and free samples sent to prospects. */
-export function products(money: Money, board: Board | null): Product[] {
+/** Everything delivered: answers to customers and free samples sent to prospects, with the data each was made from. */
+export function products(money: Money, board: Board | null, decisions: Decisions | null): Product[] {
   const cards = byId(board);
+  const src = requestSources(decisions);
   return money.perRequest
     .filter((r) => r.status === "delivered")
     .map((r) => {
       const b = cards.get(r.id);
-      return { id: r.id, playbook: r.playbook, sample: r.sample, customer: b?.customer ?? null, question: b?.question ?? null, location: b?.location ?? null, cost: r.cost, price: r.price, paid: r.paid };
+      const s = src.get(r.id);
+      return {
+        id: r.id, playbook: r.playbook, sample: r.sample, customer: b?.customer ?? null, question: b?.question ?? null, location: b?.location ?? null,
+        cost: r.cost, price: r.price, paid: r.paid, sources: s?.sources ?? [], paidData: s?.paidData ?? null,
+      };
     });
 }
 
@@ -158,38 +165,43 @@ export function median(values: number[]): number | null {
   return s.length % 2 ? s[mid] : (s[mid - 1] + s[mid]) / 2;
 }
 
-/** Prices we have actually quoted to customers, for the comparison with the market. */
-export function ourPrices(money: Money) {
-  const p = money.perRequest.filter((r) => !r.sample && r.price !== null).map((r) => r.price as number);
-  return { n: p.length, low: p.length ? Math.min(...p) : null, median: median(p), high: p.length ? Math.max(...p) : null };
-}
-
-/** Market rows grouped by playbook, in a fixed playbook order. */
-export function marketByPlaybook(m: MarketPrices) {
-  const order: Playbook[] = ["disasters", "deforestation", "mining", "inbound"];
-  return order.map((p) => ({ playbook: p, rows: m.rows.filter((r) => r.playbook === p) })).filter((g) => g.rows.length);
-}
-
 /** "Sentinel-2 L2A, 2026-09-20 (clear) vs …" → "Sentinel-2 L2A". The agents write the source first, then detail. */
 export function sourceName(choice: string): string {
   const cut = choice.search(/[,:;(]| searched| vs /);
   return (cut > 0 ? choice.slice(0, cut) : choice).trim();
 }
 
-export interface SourceUse { name: string; requests: number; last: string }
+/** Public facts about the imagery the agents use, for the source cards. Unknown sources show without them. */
+export const SOURCE_INFO: Record<string, { provider: string; kind: string; resolution: string; access: "free" | "paid" }> = {
+  "Sentinel-2 L2A": { provider: "ESA Copernicus", kind: "Optical", resolution: "10 m", access: "free" },
+  "Landsat 9 C2 L2": { provider: "USGS / NASA", kind: "Optical and thermal", resolution: "30 m", access: "free" },
+  "Sentinel-1 RTC radar": { provider: "ESA Copernicus", kind: "Radar, sees through cloud", resolution: "10 m", access: "free" },
+  "Planet SkySat 50 cm via SkyWatch": { provider: "Planet, through SkyWatch", kind: "Optical", resolution: "0.5 m", access: "paid" },
+  "Vantor 30 cm via SkyWatch": { provider: "Vantor, through SkyWatch", kind: "Optical", resolution: "0.3 m", access: "paid" },
+};
+
+export interface SourceUse { name: string; requests: number; last: string; playbooks: Playbook[] }
+export interface Considered { option: string; times: number }
 export interface PaidOptionDeclined { option: string; times: number; low: number; high: number }
 
-/** What the acquisition agent chose, and what paid data it considered and passed over, in the recent decision log. */
+/** What the acquisition agent chose, what else it weighed, and what paid data it passed over, in the recent decision log. */
 export function dataSources(d: Decisions) {
   const used = new Map<string, SourceUse>();
+  const considered = new Map<string, Considered>();
   const declined = new Map<string, PaidOptionDeclined>();
   for (const row of d.rows) {
     if (row.kind === "source_selection") {
       const name = sourceName(row.choice);
-      const u = used.get(name) ?? { name, requests: 0, last: row.at };
+      const u = used.get(name) ?? { name, requests: 0, last: row.at, playbooks: [] };
       u.requests += 1;
       if (row.at > u.last) u.last = row.at;
+      if (row.playbook && !u.playbooks.includes(row.playbook)) u.playbooks.push(row.playbook);
       used.set(name, u);
+      for (const alt of row.alternatives) {
+        const c = considered.get(alt.option) ?? { option: alt.option, times: 0 };
+        c.times += 1;
+        considered.set(alt.option, c);
+      }
     }
     if (row.kind === "free_vs_paid" && row.choice === "free") {
       for (const alt of row.alternatives) {
@@ -204,8 +216,36 @@ export function dataSources(d: Decisions) {
   }
   return {
     used: [...used.values()].sort((a, b) => b.requests - a.requests || a.name.localeCompare(b.name)),
+    considered: [...considered.values()].filter((c) => !used.has(c.option)).sort((a, b) => b.times - a.times),
     declined: [...declined.values()].sort((a, b) => b.times - a.times),
     free: d.freeVsPaid.find((x) => x.choice === "free")?.n ?? 0,
     paid: d.freeVsPaid.find((x) => x.choice === "paid")?.n ?? 0,
+  };
+}
+
+export interface Share { label: string; usd: number; share: number }
+
+/** Where the money goes: by service and by agent (each as a share), the cost of a delivered report, and the priciest requests. */
+export function costs(money: Money) {
+  const services = [
+    { label: "Naïve: agents, models, browser", usd: money.spend.naive },
+    { label: "Monid: business data", usd: money.spend.monid },
+    { label: "Imagery and data", usd: money.spend.data },
+    { label: "Other", usd: money.spend.other },
+  ];
+  const sum = (xs: { usd: number }[]) => xs.reduce((t, x) => t + x.usd, 0);
+  const withShare = (xs: { label: string; usd: number }[]): Share[] => {
+    const all = sum(xs);
+    return xs.map((x) => ({ ...x, share: all > 0 ? x.usd / all : 0 }));
+  };
+  const delivered = money.perRequest.filter((r) => r.status === "delivered").map((r) => r.cost);
+  const reports = money.perRequest.filter((r) => !r.sample && r.price !== null && r.cost > 0);
+  return {
+    services: withShare(services),
+    agents: withShare(money.byAgent.map((a) => ({ label: a.agent, usd: a.usd }))).sort((a, b) => b.usd - a.usd),
+    perReport: { median: median(delivered), low: delivered.length ? Math.min(...delivered) : null, high: delivered.length ? Math.max(...delivered) : null, n: delivered.length },
+    /** Price as a multiple of cost on priced customer requests: how much room the price leaves. */
+    markup: median(reports.map((r) => (r.price as number) / r.cost)),
+    priciest: [...money.perRequest].sort((a, b) => b.cost - a.cost).slice(0, 5),
   };
 }

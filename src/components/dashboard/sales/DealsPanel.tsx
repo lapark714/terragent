@@ -2,13 +2,27 @@
 /**
  * Every customer request as a deal, in four sections: outreach pending and in negotiation (what it will cost us and
  * what we quoted), then pending fulfillment and completed (where the data came from, and revenue against cost).
+ * A fifth tab lists cold outreach: businesses the agents matched to a signal and contacted, or are about to.
  */
 import { useState } from "react";
 import { actorLabel, ago, clockUtc, count, STATUS_LABEL, usd } from "../../format";
 import { PLAYBOOK_BG, PLAYBOOK_LABEL } from "../../palette";
 import { useNow } from "../../useNow";
 import { Quiet } from "../Panel";
+import { CHANNEL_LABEL, outreachStatus, OUTREACH_GROUPS, type SignalWithProspects, statusTone } from "../signals/outreach";
+import { feedLabel, UrgencyTag } from "../signals/signals";
 import { byStage, type Deal, DEAL_STAGE_LABEL, DEAL_STAGES, type DealStage } from "./model";
+
+type Tab = DealStage | "cold";
+const TABS: Tab[] = [...DEAL_STAGES, "cold"];
+const TAB_LABEL: Record<Tab, string> = { ...DEAL_STAGE_LABEL, cold: "Cold outreach" };
+
+/** One row per business contacted (or about to be) from a signal: responders first, then newest. */
+export function coldOutreach(signals: SignalWithProspects[]) {
+  const rows = signals.flatMap((s) => s.prospects.map((p) => ({ p, s })));
+  const rank = (status: string) => OUTREACH_GROUPS.indexOf(outreachStatus(status).group);
+  return rows.sort((a, b) => rank(a.p.status) - rank(b.p.status) || b.p.updatedAt.localeCompare(a.p.updatedAt));
+}
 
 const EMPTY: Record<DealStage, string> = {
   outreach: "No requests waiting on a quote.",
@@ -20,20 +34,21 @@ const EMPTY: Record<DealStage, string> = {
 const th = "py-1.5 font-normal";
 const td = "py-2 align-top";
 
-export function DealsPanel({ deals }: { deals: Deal[] }) {
+export function DealsPanel({ deals, outreach }: { deals: Deal[]; outreach: SignalWithProspects[] | null }) {
   const now = useNow();
   const groups = byStage(deals);
-  const [stage, setStage] = useState<DealStage>(() => DEAL_STAGES.find((s) => groups[s].length) ?? "outreach");
-  const rows = groups[stage];
+  const cold = outreach ? coldOutreach(outreach) : null;
+  const [stage, setStage] = useState<Tab>(() => DEAL_STAGES.find((s) => groups[s].length) ?? "outreach");
+  const rows = stage === "cold" ? [] : groups[stage];
+  const size = (t: Tab) => (t === "cold" ? (cold?.length ?? 0) : groups[t].length);
   const pre = stage === "outreach" || stage === "negotiation";
   const when = (d: Deal) => (d.updatedAt ? (now ? ago(d.updatedAt, now) : clockUtc(d.updatedAt)) : "–");
 
-  if (!deals.length) return <Quiet>No customer requests yet. Free samples to prospects are on the Signal Engine tab.</Quiet>;
 
   return (
     <div className="flex h-full min-h-0 flex-col gap-3">
       <div role="tablist" aria-label="Deal stage" className="flex flex-wrap gap-1 rounded-lg border border-line-strong p-1 self-start">
-        {DEAL_STAGES.map((s) => (
+        {TABS.map((s) => (
           <button
             key={s}
             type="button"
@@ -42,14 +57,16 @@ export function DealsPanel({ deals }: { deals: Deal[] }) {
             onClick={() => setStage(s)}
             className={`inline-flex items-center gap-2 rounded-md px-3 py-1.5 text-[13px] transition-colors ${stage === s ? "bg-raised text-fg" : "text-fg-2 hover:text-fg"}`}
           >
-            {DEAL_STAGE_LABEL[s]}
-            <span className={`rounded-full px-1.5 text-xs tabular-nums ${stage === s ? "bg-inbound/25 text-fg" : "bg-raised text-fg-3"}`}>{count(groups[s].length)}</span>
+            {TAB_LABEL[s]}
+            <span className={`rounded-full px-1.5 text-xs tabular-nums ${stage === s ? "bg-inbound/25 text-fg" : "bg-raised text-fg-3"}`}>{count(size(s))}</span>
           </button>
         ))}
       </div>
 
-      <div role="tabpanel" aria-label={DEAL_STAGE_LABEL[stage]} className="scroll-quiet min-h-0 flex-1 overflow-auto">
-        {!rows.length ? (
+      <div role="tabpanel" aria-label={TAB_LABEL[stage]} className="scroll-quiet min-h-0 flex-1 overflow-auto">
+        {stage === "cold" ? (
+          <ColdOutreachTable rows={cold} />
+        ) : !rows.length ? (
           <Quiet>{EMPTY[stage]}</Quiet>
         ) : (
           <table className="w-full min-w-[56rem] text-[13px]">
@@ -132,10 +149,61 @@ export function DealsPanel({ deals }: { deals: Deal[] }) {
         )}
       </div>
       <p className="text-xs text-fg-3">
-        {pre
+        {stage === "cold"
+          ? "Businesses the sourcing agent matched to a signal. Each gets one free sample report and one first touch, with an opt-out."
+          : pre
           ? "Cost to us is what the agents and data have cost on this request so far; the quote is what the pricing agent set."
           : "Revenue is the quoted price; cost is what the agents and data cost to fulfil it; profit is the difference."}
       </p>
     </div>
+  );
+}
+
+function ColdOutreachTable({ rows }: { rows: ReturnType<typeof coldOutreach> | null }) {
+  const now = useNow();
+  if (rows === null) return <Quiet>Cold outreach appears here once the prospects feed is connected.</Quiet>;
+  if (!rows.length) return <Quiet>No businesses matched to a signal yet.</Quiet>;
+  return (
+    <table className="w-full min-w-[60rem] text-[13px]">
+      <thead className="sticky top-0 bg-panel text-xs text-fg-3">
+        <tr className="border-b border-line">
+          <th scope="col" className={`${th} pr-3 text-left`}>Business</th>
+          <th scope="col" className={`${th} pr-3 text-left`}>From signal</th>
+          <th scope="col" className={`${th} pr-3 text-left`}>Channel</th>
+          <th scope="col" className={`${th} pl-2 text-right`}>Fit</th>
+          <th scope="col" className={`${th} pl-3 text-left`}>Status</th>
+          <th scope="col" className={`${th} pl-3 text-right`}>Updated</th>
+        </tr>
+      </thead>
+      <tbody className="divide-y divide-line">
+        {rows.map(({ p, s }) => (
+          <tr key={p.id}>
+            <th scope="row" className={`${td} max-w-[18rem] pr-3 text-left font-normal`}>
+              <p className="truncate">
+                {p.company}
+                {p.domain && <span className="text-fg-3"> · {p.domain}</span>}
+              </p>
+              {(p.asset || p.role) && <p className="truncate text-xs text-fg-3">{[p.asset, p.role].filter(Boolean).join(" · ")}</p>}
+            </th>
+            <td className={`${td} max-w-[22rem] pr-3`}>
+              <p className="flex items-center gap-1.5">
+                <span className={`size-2 shrink-0 rounded-full ${PLAYBOOK_BG[s.playbook]}`} title={PLAYBOOK_LABEL[s.playbook]} aria-label={PLAYBOOK_LABEL[s.playbook]} />
+                <span className="line-clamp-1" title={s.title}>{s.title}</span>
+              </p>
+              <p className="flex items-center gap-1.5 text-xs text-fg-3">
+                <UrgencyTag feed={s.feed} />
+                <span className="truncate">{feedLabel(s.feed)}</span>
+              </p>
+            </td>
+            <td className={`${td} pr-3 whitespace-nowrap text-fg-2`}>{p.channel ? (CHANNEL_LABEL[p.channel] ?? p.channel) : "–"}</td>
+            <td className={`${td} pl-2 text-right tabular-nums text-fg-2`}>{p.score === null ? "–" : Math.round(p.score * 100)}</td>
+            <td className={`${td} pl-3`}>
+              <span className={`inline-flex items-center rounded-full border px-2 py-px text-[11px] whitespace-nowrap ${statusTone(p.status)}`}>{outreachStatus(p.status).label}</span>
+            </td>
+            <td className={`${td} pl-3 text-right text-xs whitespace-nowrap text-fg-3 tabular-nums`}>{p.updatedAt ? (now ? ago(p.updatedAt, now) : clockUtc(p.updatedAt)) : "–"}</td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
   );
 }

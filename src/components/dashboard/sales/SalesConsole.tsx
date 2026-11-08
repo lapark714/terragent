@@ -1,19 +1,20 @@
 "use client";
 /**
- * Operations (the /dashboard tab), for founders: deals and money first, then what we've made, how our price
- * compares, and where the data comes from. Reads the same cached endpoints as the Signal Engine; nothing new is queried.
+ * Operations (the /dashboard tab), for founders: deals and money first, then what we've delivered, what it costs, and
+ * where the data comes from. Reads the same cached endpoints as the Signal Engine.
  */
-import type { LiveSnapshot, MarketResponse } from "@/lib/dashboard/types";
+import type { LiveSnapshot } from "@/lib/dashboard/types";
 import { count, usd } from "../../format";
 import { usePoll } from "../../usePoll";
 import { DashboardHeader } from "../DashboardHeader";
 import { keepLastGood } from "../keepLastGood";
 import { Panel, PanelData, Quiet } from "../Panel";
+import type { SignalProspectsResponse } from "../signals/outreach";
+import { CostsPanel } from "./CostsPanel";
+import { DataSourcesPanel } from "./DataSourcesPanel";
 import { DealsPanel } from "./DealsPanel";
-import { dataSources, deals as toDeals, openValue, ourPrices, products as toProducts } from "./model";
-import { PricePanel } from "./PricePanel";
+import { dataSources, deals as toDeals, openValue, products as toProducts } from "./model";
 import { ProductsPanel } from "./ProductsPanel";
-import { SourcesPanel } from "./SourcesPanel";
 
 const PAUSED_POLL_MS = 60_000;
 
@@ -30,10 +31,11 @@ function Kpi({ label, value, note, tone }: { label: string; value: React.ReactNo
   );
 }
 
-export function SalesConsole({ initialLive, initialMarket }: { initialLive: LiveSnapshot | null; initialMarket: MarketResponse | null }) {
+export function SalesConsole({ initialLive }: { initialLive: LiveSnapshot | null }) {
   const live = usePoll<LiveSnapshot>("/api/dashboard/live", 6_000, initialLive, keepLastGood);
   const suspended = live.data?.dbSuspended === true;
-  const market = usePoll<MarketResponse>("/api/dashboard/market", suspended ? PAUSED_POLL_MS : 60_000, initialMarket);
+  const prospects = usePoll<SignalProspectsResponse>("/api/dashboard/prospects", suspended ? PAUSED_POLL_MS : 10_000);
+  const outreach = prospects.data?.ok ? prospects.data.data.signals : null;
 
   const s = live.data;
   const money = s?.money.ok ? s.money.data : null;
@@ -68,24 +70,17 @@ export function SalesConsole({ initialLive, initialMarket }: { initialLive: Live
       )}
 
       <main className="instrument mx-2 grid-cols-1 overflow-hidden rounded-lg xl:grid-cols-12">
-        <Panel title="Deals" meta="Customer requests, from first contact to paid" className="h-[34rem] xl:col-span-12">
-          <PanelData result={s?.money}>{() => <DealsPanel deals={dealList} />}</PanelData>
+        <Panel title="Deals" meta="Customer requests, from first contact to paid, and cold outreach" className="h-[34rem] xl:col-span-12">
+          <PanelData result={s?.money}>{() => <DealsPanel deals={dealList} outreach={outreach} />}</PanelData>
         </Panel>
-        <Panel title="Products made" meta="Delivered reports and free samples" className="h-[30rem] xl:col-span-6">
-          <PanelData result={s?.money}>{(m) => <ProductsPanel products={toProducts(m, board)} indexCells={overview?.indexCells ?? null} />}</PanelData>
+        <Panel title="Products made" meta="Delivered reports and free samples, with the data each was made from" className="h-[28rem] xl:col-span-12">
+          <PanelData result={s?.money}>{(m) => <ProductsPanel products={toProducts(m, board, decisions)} />}</PanelData>
         </Panel>
-        <Panel title="Price vs competitors" meta="What buyers pay today, with sources" className="h-[30rem] xl:col-span-6">
-          {market.data ? (
-            <PanelData result={market.data}>{(m) => <PricePanel market={m} ours={money ? ourPrices(money) : { n: 0, low: null, median: null, high: null }} />}</PanelData>
-          ) : (
-            <Quiet>Waiting for the first update.</Quiet>
-          )}
+        <Panel title="Costs" meta="Where the money goes" className="h-[30rem] xl:col-span-6">
+          <PanelData result={s?.money}>{(m) => <CostsPanel money={m} />}</PanelData>
         </Panel>
-        <Panel title="Data sources and cost" meta="From the agents' decision log" className="xl:col-span-12">
-          <SourcesPanel
-            spend={money?.spend ?? null}
-            sources={s?.decisions.ok ? dataSources(s.decisions.data) : null}
-          />
+        <Panel title="Data sources" meta="What the agents chose and why, from their decision log" className="h-[30rem] xl:col-span-6">
+          {decisions ? <DataSourcesPanel sources={dataSources(decisions)} /> : <PanelData result={s?.decisions}>{() => <Quiet>Waiting for the first update.</Quiet>}</PanelData>}
         </Panel>
       </main>
     </div>

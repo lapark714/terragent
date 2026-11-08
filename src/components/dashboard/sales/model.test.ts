@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Board, Decisions, Money, RequestMoney } from "@/lib/dashboard/types";
-import { byStage, dataSources, dealStage, deals, median, openValue, ourPrices, products, requestSources, sourceName } from "./model";
+import { byStage, costs, dataSources, dealStage, deals, median, openValue, products, requestSources, sourceName } from "./model";
 
 const req = (over: Partial<RequestMoney>): RequestMoney => ({ id: "req_a", playbook: "inbound", status: "pricing", sample: false, cost: 1, price: null, paid: 0, ...over });
 
@@ -63,11 +63,20 @@ describe("requestSources", () => {
 
 describe("products and prices", () => {
   it("lists delivered work only, samples included", () => {
-    const p = products(money([req({ id: "1", status: "delivered", sample: true }), req({ id: "2", status: "analyzing" })]), null);
-    expect(p.map((x) => x.id)).toEqual(["1"]);
+    const decisions: Decisions = { rows: [row("source_selection", "Landsat 9 C2 L2, x", "1")], freeVsPaid: [] };
+    const p = products(money([req({ id: "1", status: "delivered", sample: true }), req({ id: "2", status: "analyzing" })]), null, decisions);
+    expect(p.map((x) => [x.id, x.sources])).toEqual([["1", ["Landsat 9 C2 L2"]]]);
   });
-  it("summarises quoted prices without samples", () => {
-    expect(ourPrices(money([req({ price: 29 }), req({ price: 39 }), req({ price: 174 }), req({ price: 5, sample: true })]))).toEqual({ n: 3, low: 29, median: 39, high: 174 });
+  it("breaks costs into shares and finds the typical report cost", () => {
+    const m = money([req({ id: "a", status: "delivered", cost: 1, price: 29 }), req({ id: "b", status: "delivered", cost: 3, price: 39 }), req({ id: "c", cost: 9 })]);
+    m.spend = { ...m.spend, naive: 3, monid: 1 };
+    m.byAgent = [{ agent: "planner", usd: 1 }, { agent: "verifier", usd: 3 }];
+    const c = costs(m);
+    expect(c.services.map((s) => s.share)).toEqual([0.75, 0.25, 0, 0]);
+    expect(c.agents.map((a) => a.label)).toEqual(["verifier", "planner"]);
+    expect(c.perReport).toEqual({ median: 2, low: 1, high: 3, n: 2 });
+    expect(c.markup).toBe(21);
+    expect(c.priciest[0].id).toBe("c");
     expect(median([])).toBeNull();
     expect(median([1, 3])).toBe(2);
   });
@@ -89,7 +98,7 @@ describe("dataSources", () => {
       freeVsPaid: [{ choice: "free", n: 2 }, { choice: "paid", n: 1 }],
     };
     const s = dataSources(d);
-    expect(s.used).toEqual([{ name: "Sentinel-2 L2A", requests: 2, last: "2026-11-07T02:00:00Z" }]);
+    expect(s.used).toEqual([{ name: "Sentinel-2 L2A", requests: 2, last: "2026-11-07T02:00:00Z", playbooks: ["inbound"] }]);
     expect(s.declined).toEqual([{ option: "SkySat", times: 2, low: 160, high: 180 }]);
   });
 });
