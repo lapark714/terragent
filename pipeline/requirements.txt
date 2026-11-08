@@ -1,0 +1,7 @@
+# Imagery pipeline runtime deps (docs/platform/imagery.md). All binary wheels; Python >= 3.12.
+# STAC search and SAS signing are plain HTTPS (stdlib), so no pystac / planetary-computer.
+numpy==2.5.4
+rasterio==1.5.2
+pillow==13.0.0
+h3==4.5.0
+certifi==2026.10.23
