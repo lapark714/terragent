@@ -22,6 +22,9 @@ const COMMON_RULES = [
 /** Rules for the request pipeline (agents that own a step of a request). */
 export const PIPELINE_RULES = [
   "Do not move or edit board cards yourself: terragent.handoff and terragent.set_status keep the board, the dashboard and the database in sync.",
+  // Parallel tool calls run concurrently: a handoff sent alongside record_screening can land first and be refused.
+  "Call a tool that depends on another's result only after that result is back, never in the same parallel batch " +
+    "(e.g. record_screening, then handoff; save_*, then handoff).",
 ];
 
 export const PIPELINE_START =
