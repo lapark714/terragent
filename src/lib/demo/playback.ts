@@ -38,7 +38,8 @@ export interface DemoFrame {
 const iso = (ms: number) => new Date(ms).toISOString();
 
 /** The report link the delivered state points at (the demo report page, never a real token). */
-export const demoReportPath = (id: string) => `/demo/report/${id}`;
+export const demoReportPath = (id: string, optionId: QuoteOptionId | null = null) =>
+  `/demo/report/${id}${optionId && optionId !== "A" ? `?option=${optionId}` : ""}`;
 
 /** Script seconds elapsed in a phase. */
 const elapsed = (from: number, now: number, speed: number, skip: number) => Math.max(0, ((now - from) / 1000) * speed + skip);
@@ -93,8 +94,8 @@ export function demoFrame(c: DemoClock, now: number): DemoFrame {
     events: s.events,
     report: delivered
       ? {
-          url: demoReportPath(c.id),
-          path: demoReportPath(c.id),
+          url: demoReportPath(c.id, c.optionId),
+          path: demoReportPath(c.id, c.optionId),
           title: REPORT_TITLE,
           answer: REPORT_ANSWER,
           confidence: REPORT_CONFIDENCE,

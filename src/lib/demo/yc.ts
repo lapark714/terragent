@@ -27,7 +27,6 @@ const after = run.result.after;
 const ndvi = run.result.indices[0];
 const options = run.public_quote_options as PublicQuoteOption[];
 const optionA = options.find((o) => o.option_id === "A")!;
-const optionB = options.find((o) => o.option_id === "B");
 const paidData = run.quote.options.find((o) => o.option_id === "B")?.data[0];
 const t = run.result.timings_s;
 
@@ -102,14 +101,25 @@ const POST_FREE: DemoStep[] = [
     log: [{ actor: "comms-customer", text: "Delivered." }] },
 ];
 
-/** After accepting a paid option: the run waits for the imagery to arrive (days), so the demo stops there. */
-const POST_PAID: DemoStep[] = [
-  { at: 0, status: "awaiting_approval", owner: null, events: [{ type: "quote.accepted", actor: "customer (link)" }],
-    log: [{ actor: "acquisition", text: "Paid option accepted. Preparing the imagery order with the supplier." }] },
-  { at: 2.5, log: [{ actor: "acquisition", text: `Imagery on order. ${optionB?.delivery_time ?? "Delivery takes a few business days."}` }] },
-];
+/** Seconds the paid path spends on the imagery order before the analysis (really 2–5 business days; the demo skips ahead). */
+const PAID_ORDER_S = 6;
 
-export const postQuoteSteps = (optionId: QuoteOptionId | null): DemoStep[] => (optionId === "A" ? POST_FREE : POST_PAID);
+/**
+ * After accepting a paid option: the imagery order, then the same analysis and report. As the quote says, the
+ * measurements come from the free Sentinel-2 pair and the purchased 1 m imagery is for reviewing finer detail.
+ */
+function postPaid(optionId: QuoteOptionId): DemoStep[] {
+  return [
+    { at: 0, status: "awaiting_approval", owner: null, events: [{ type: "quote.accepted", actor: "customer (link)" }],
+      log: [{ actor: "acquisition", text: `Option ${optionId} accepted. Ordering the 1 m archive imagery from the supplier.` }] },
+    { at: 2.5, log: [{ actor: "acquisition", text: "Imagery on order with the supplier." }] },
+    { at: PAID_ORDER_S, status: "fetching", owner: "analytics", events: [{ type: "handoff", actor: "acquisition" }],
+      log: [{ actor: "analytics", text: "Imagery delivered. Measurements run on the free Sentinel-2 pair; the 1 m frames are kept for reviewing detail." }] },
+    ...POST_FREE.slice(1).map((s) => ({ ...s, at: s.at + PAID_ORDER_S })),
+  ];
+}
+
+export const postQuoteSteps = (optionId: QuoteOptionId | null): DemoStep[] => (!optionId || optionId === "A" ? POST_FREE : postPaid(optionId));
 
 export function demoQuote(id: string, acceptedOptionId: QuoteOptionId | null, acceptedAt: string | null, createdAt: string): PublicQuote {
   return {
@@ -145,7 +155,8 @@ export const REPORT_CONFIDENCE = optionA.confidence;
 const PC_ITEM = (collection: string, id: string) => `https://planetarycomputer.microsoft.com/api/stac/v1/collections/${collection}/items/${id}`;
 const S2_SOURCE = "Sentinel-2 L2A via Microsoft Planetary Computer";
 
-export function demoReport(token: string): PublicReport {
+/** `paid`: the customer chose the 1 m option, so the report says what that imagery is for instead of offering it. */
+export function demoReport(token: string, { paid = false }: { paid?: boolean } = {}): PublicReport {
   const imgDate = (role: string) => (role === "before" ? before.datetime : after.datetime);
   return {
     token,
@@ -175,9 +186,11 @@ export function demoReport(token: string): PublicReport {
       url: PC_ITEM(s.collection, s.item_id),
       license: "Copernicus Sentinel data, free and open",
     })),
-    limitations: REPORT_LIMITATIONS,
+    limitations: paid
+      ? `${REPORT_LIMITATIONS} The 1 m imagery you chose is for reviewing finer detail; the measurements above come from the free 10 m Sentinel-2 pair.`
+      : REPORT_LIMITATIONS,
     humanReview: false,
-    paidDataEstimate: paidData
+    paidDataEstimate: !paid && paidData
       ? { wouldShow: "1 m archive imagery would show individual buildings and roofs, and confirm what replaced the tanks and yards.", estCostUsd: paidData.data_cost_usd, providerId: paidData.provider_id }
       : null,
     verifierScore: 92,
