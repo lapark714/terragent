@@ -426,6 +426,7 @@ export const SIGNAL_FEEDS = [
   "gfw",
   "mrds",
   "news",
+  "blm_claims",
 ] as const;
 export const SignalFeed = z.enum(SIGNAL_FEEDS);
 export type SignalFeed = z.infer<typeof SignalFeed>;

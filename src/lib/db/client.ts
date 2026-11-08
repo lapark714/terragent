@@ -31,8 +31,11 @@ export function setDb(db: Db | null) {
 }
 
 export async function createDb(opts: { url?: string; memory?: boolean; dataDir?: string } = {}): Promise<Db> {
-  // TERRAGENT_DB=memory wins over DATABASE_URL so tests and dry runs can never touch production Neon.
-  const memory = opts.memory || process.env.TERRAGENT_DB === "memory";
+  // TERRAGENT_DB wins over DATABASE_URL, so tests, dry runs and local UI work can never touch production Neon:
+  //   memory → in-memory PGlite (tests);  local → persistent demo PGlite in .pglite-demo/ (npm run dev:local).
+  const mode = process.env.TERRAGENT_DB;
+  const memory = opts.memory || mode === "memory";
+  if (mode === "local" && !opts.url && !memory) return createPgliteDb(opts.dataDir ?? process.env.PGLITE_DATA_DIR ?? ".pglite-demo");
   const url = opts.url ?? process.env.DATABASE_URL;
   if (url && !memory) return createNeonDb(url);
   return createPgliteDb(memory ? undefined : (opts.dataDir ?? ".pglite"));

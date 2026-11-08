@@ -29,19 +29,20 @@ export interface AgentBudget {
 
 /**
  * Split of the $250 Naïve budget (spec §1.1): ~$40 build/test, ~$120 overnight, ~$50 inbound+demo, ~$40 buffer.
- * Caps sum to ~$117/day; the org balance is the hard ceiling. Revisit after measuring real spend.
+ * Caps sum to ~$119/day; the org balance is the hard ceiling. Session pre-flight floors measured live
+ * (docs/platform/naive-live.md): Sonnet 5.5 ~$0.40, GLM-5.2 ~$0.30, Haiku 5.5 ~$0.05 — maxTaskUsd must stay ≥ 2× floor.
  */
 export const AGENT_BUDGETS: Record<AgentName, AgentBudget> = {
-  coordinator: { model: MODELS.loose, window: "loose", capUsdPerDay: 6, maxTaskUsd: 0.5 },
+  coordinator: { model: MODELS.loose, window: "loose", capUsdPerDay: 8, maxTaskUsd: 0.8 },
   "comms-customer": { model: MODELS.routine, window: "immediate", capUsdPerDay: 8, maxTaskUsd: 0.5 },
   "comms-suppliers": { model: MODELS.routine, window: "immediate", capUsdPerDay: 3, maxTaskUsd: 0.4 },
   "comms-outreach": { model: MODELS.routine, window: "immediate", capUsdPerDay: 8, maxTaskUsd: 0.4 },
-  planner: { model: MODELS.strong, window: "immediate", capUsdPerDay: 10, maxTaskUsd: 0.6 },
+  planner: { model: MODELS.strong, window: "immediate", capUsdPerDay: 10, maxTaskUsd: 1.0 },
   acquisition: { model: MODELS.routine, window: "immediate", capUsdPerDay: 10, maxTaskUsd: 0.6 },
   pricing: { model: MODELS.routine, window: "immediate", capUsdPerDay: 3, maxTaskUsd: 0.25 },
   interpreter: { model: MODELS.strong, window: "immediate", capUsdPerDay: 15, maxTaskUsd: 1.0 },
   analytics: { model: MODELS.routine, window: "immediate", capUsdPerDay: 10, maxTaskUsd: 0.75 },
-  verifier: { model: MODELS.strong, window: "immediate", capUsdPerDay: 8, maxTaskUsd: 0.5 },
+  verifier: { model: MODELS.strong, window: "immediate", capUsdPerDay: 8, maxTaskUsd: 1.0 },
   sourcing: { model: MODELS.loose, window: "loose", capUsdPerDay: 30, maxTaskUsd: 2.0 },
   "market-researcher": { model: MODELS.loose, window: "loose", capUsdPerDay: 6, maxTaskUsd: 3.0 },
 };
@@ -80,6 +81,8 @@ export const CAPS = {
   maxReportRevisions: 2,
   /** Free sample reports the signal engine may start per run, before allocation weights. */
   freeSamplesPerRun: envNumber("CAP_FREE_SAMPLES_PER_RUN", 6),
+  /** Free samples per day across playbooks — sized so planner/interpreter/verifier caps keep ~$4/day each for inbound + demo. */
+  freeSamplesPerDay: envNumber("CAP_FREE_SAMPLES_PER_DAY", 12),
   apiRequestsPerHourDefault: 30,
   /** Largest AOI we analyze from free data without asking (km²). */
   maxFreeAoiKm2: 100,

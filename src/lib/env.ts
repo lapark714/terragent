@@ -39,3 +39,13 @@ export function publicBaseUrl(): string {
 }
 
 export const isProduction = () => env("VERCEL_ENV") === "production";
+
+/**
+ * Offline mode for local UI work (npm run dev:local): no Naïve sessions, no AgentMail sends, no Monid runs.
+ * On whenever TERRAGENT_OFFLINE is truthy or the demo database is in use, so a local portal submit can never
+ * wake a real agent or email a real person. Never on in production.
+ */
+export function isOffline(): boolean {
+  if (env("VERCEL_ENV") === "production") return false;
+  return envFlag("TERRAGENT_OFFLINE") || env("TERRAGENT_DB") === "local";
+}

@@ -16,7 +16,9 @@
     "test:live": "vitest run --config vitest.live.config.mts",
     "pipeline": "tsx scripts/pipeline.ts",
     "bundle:pipeline": "tsx scripts/bundle-pipeline.ts",
-    "test:pipeline": "bash pipeline/bootstrap.sh --dev >/dev/null && pipeline/.venv/bin/python -m pytest -q pipeline/tests"
+    "test:pipeline": "bash pipeline/bootstrap.sh --dev >/dev/null && pipeline/.venv/bin/python -m pytest -q pipeline/tests",
+    "seed:demo": "TERRAGENT_DB=local TERRAGENT_OFFLINE=1 tsx scripts/seed-demo.ts",
+    "dev:local": "TERRAGENT_DB=local TERRAGENT_OFFLINE=1 tsx scripts/seed-demo.ts --if-empty && TERRAGENT_DB=local TERRAGENT_OFFLINE=1 next dev"
   },
   "dependencies": {
     "@modelcontextprotocol/server": "^2.4.0",

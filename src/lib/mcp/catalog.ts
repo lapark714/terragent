@@ -127,6 +127,8 @@ export const TOOLS: readonly ToolSpec[] = [
     description: "Send the request's quote to the customer from hello@." },
   { name: "deliver_report", group: "customer", agents: ["comms-customer"], permission: "allow",
     description: "Deliver a verified report to the customer in the same thread, with images and the report link." },
+  { name: "record_opt_out", group: "customer", agents: ["comms-customer"], permission: "allow",
+    description: "Honour a customer's request to stop email: add their address to the suppression list and note the request." },
   { name: "create_monitor", group: "customer", agents: ["comms-customer"], permission: "allow",
     description: "Set up a monitoring job that re-checks a site on a schedule and follows up on change." },
 
