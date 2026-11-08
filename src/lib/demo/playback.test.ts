@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { demoFrame, skipToNext, type DemoClock } from "./playback";
-import { demoSeries } from "./yc";
+import { demoReport } from "./yc";
 
 const T0 = Date.parse("2026-11-08T12:00:00Z");
 const clock = (over: Partial<DemoClock> = {}): DemoClock => ({
@@ -23,12 +23,12 @@ describe("demoFrame", () => {
     expect(f.nextIn).toBeNull();
   });
 
-  it("runs to delivered after acceptance, with a demo report link", () => {
-    const f = demoFrame(clock({ acceptedAt: T0 + 60_000, optionId: "B" }), T0 + 600_000);
+  it("runs to delivered after accepting the free-data option, with a demo report link", () => {
+    const f = demoFrame(clock({ acceptedAt: T0 + 60_000, optionId: "A" }), T0 + 600_000);
     expect(f.progress.status).toBe("delivered");
     expect(f.progress.terminal).toBe(true);
     expect(f.progress.report?.path).toBe("/demo/report/req_demoabc123");
-    expect(f.progress.quote?.accepted_option_id).toBe("B");
+    expect(f.progress.quote?.accepted_option_id).toBe("A");
     expect(f.progress.events.some((e) => e.type === "report.verified")).toBe(true);
   });
 
@@ -43,16 +43,21 @@ describe("demoFrame", () => {
     const c = clock({ skipPre: 20 });
     for (const e of demoFrame(c, T0 + 1000).progress.events) expect(Date.parse(e.at)).toBeLessThanOrEqual(T0 + 1000);
   });
+
+  it("a paid option waits for a founder to buy the imagery, as the real system does", () => {
+    const f = demoFrame(clock({ acceptedAt: T0 + 60_000, optionId: "B" }), T0 + 600_000);
+    expect(f.progress.status).toBe("awaiting_approval");
+    expect(f.progress.terminal).toBe(false);
+    expect(f.progress.events.some((e) => e.type === "order.prepared")).toBe(true);
+  });
 });
 
-describe("demoSeries", () => {
-  it("covers Jan 2016 to Oct 2026 with values in range", () => {
-    const s = demoSeries();
-    expect(s[0].month).toBe("2016-01");
-    expect(s.at(-1)?.month).toBe("2026-10");
-    for (const p of s) {
-      expect(p.mv).toBeGreaterThanOrEqual(0);
-      expect(p.sf).toBeLessThanOrEqual(1);
-    }
+describe("demoReport", () => {
+  it("uses the real run: four pipeline maps, two dated Planetary Computer scenes", () => {
+    const r = demoReport("req_demoabc123");
+    expect(r.images.map((i) => i.role)).toEqual(["before", "after", "index", "change"]);
+    expect(r.images.every((i) => i.src.startsWith("/demo/yc-sf/"))).toBe(true);
+    expect(r.sources).toHaveLength(2);
+    expect(r.sources.every((s) => s.url?.startsWith("https://planetarycomputer.microsoft.com/"))).toBe(true);
   });
 });

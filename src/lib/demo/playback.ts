@@ -4,7 +4,7 @@
  */
 import type { RequestProgress } from "@/lib/dashboard/public";
 import type { QuoteOptionId, RequestStatus } from "@/lib/domain";
-import { demoQuote, POST_QUOTE, PRE_QUOTE, REPORT_ANSWER, REPORT_LIMITATIONS, REPORT_TITLE, type DemoStep } from "./yc";
+import { demoQuote, postQuoteSteps, PRE_QUOTE, REPORT_ANSWER, REPORT_CONFIDENCE, REPORT_LIMITATIONS, REPORT_TITLE, type DemoStep } from "./yc";
 
 export interface DemoClock {
   id: string;
@@ -74,7 +74,7 @@ export function demoFrame(c: DemoClock, now: number): DemoFrame {
 
   if (c.acceptedAt !== null && s.status === "quoted") {
     const postSecs = elapsed(c.acceptedAt, now, c.speed, c.skipPost);
-    nextIn = apply(POST_QUOTE, postSecs, c.acceptedAt, c.speed, c.skipPost, now, s);
+    nextIn = apply(postQuoteSteps(c.optionId), postSecs, c.acceptedAt, c.speed, c.skipPost, now, s);
   } else if (s.status === "quoted") {
     nextIn = null;
   }
@@ -97,7 +97,7 @@ export function demoFrame(c: DemoClock, now: number): DemoFrame {
           path: demoReportPath(c.id),
           title: REPORT_TITLE,
           answer: REPORT_ANSWER,
-          confidence: "high",
+          confidence: REPORT_CONFIDENCE,
           limitations: REPORT_LIMITATIONS,
           humanReview: false,
         }

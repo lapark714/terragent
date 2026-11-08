@@ -11,7 +11,7 @@ import { coordsPlace, reverse, type Place } from "./geocode";
 import type { GlobeTarget } from "./HeroGlobe";
 import { GlobeStill, HeroGlobeLoader } from "./HeroGlobeLoader";
 import { PlaceSearch } from "./PlaceSearch";
-import { SITES } from "@/lib/demo/yc";
+import { SITE } from "@/lib/demo/yc";
 
 const EXAMPLES: { text: string; place: Place }[] = [
   { text: "Lahaina, Maui", place: { lat: 20.874, lng: -156.678, label: "Lahaina", detail: "Maui, Hawaii, United States", kind: "place", altitude: 0.08 } },
@@ -19,11 +19,11 @@ const EXAMPLES: { text: string; place: Place }[] = [
   { text: "Port Arthur, Texas", place: { lat: 29.885, lng: -93.94, label: "Port Arthur", detail: "Texas, United States", kind: "place", altitude: 0.1 } },
 ];
 
-/** /demo only: the two YC offices (OpenStreetMap positions) lead the chips. */
-const DEMO_EXAMPLES: { text: string; place: Place }[] = [SITES.sf, SITES.mv].map((s) => ({
-  text: `YC, ${s.short}`,
-  place: { lat: s.lat, lng: s.lng, label: s.name, detail: s.detail, kind: "address", altitude: 0.04 },
-}));
+/** /demo only: YC's Dogpatch office (OpenStreetMap position) leads the chips. */
+const DEMO_EXAMPLES: { text: string; place: Place }[] = [
+  { text: `YC, ${SITE.short}`, place: { lat: SITE.lat, lng: SITE.lng, label: SITE.name, detail: SITE.detail, kind: "address", altitude: 0.04 } },
+  ...EXAMPLES.slice(0, 2),
+];
 
 const noSubscribe = () => () => {};
 

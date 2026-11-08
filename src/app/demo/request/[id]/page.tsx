@@ -1,11 +1,11 @@
 import type { Metadata } from "next";
 import { DemoRequestView } from "@/components/demo/DemoRequestView";
 import { helloAddress } from "@/components/site/contact";
-import { DEMO_PERIOD, DEMO_QUESTION, SITES } from "@/lib/demo/yc";
+import { DEMO_PERIOD, DEMO_QUESTION, SITE } from "@/lib/demo/yc";
 
 export const metadata: Metadata = { title: "Your request" };
 
-const DEFAULT_LOCATION = `${SITES.sf.name}, ${SITES.sf.detail} · ${SITES.sf.lat.toFixed(4)}, ${SITES.sf.lng.toFixed(4)}`;
+const DEFAULT_LOCATION = `${SITE.name}, ${SITE.detail} · ${SITE.lat.toFixed(5)}, ${SITE.lng.toFixed(5)}`;
 const one = (v: string | string[] | undefined) => (Array.isArray(v) ? v[0] : v);
 
 /** Synthetic: any id works, nothing is read from the database. Place and question come from the demo ask form. */

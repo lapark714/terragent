@@ -43,7 +43,8 @@ function ImageCard({ img }: { img: PublicReport["images"][number] }) {
   );
 }
 
-export function ReportView({ report: r, url }: { report: PublicReport; url?: string }) {
+/** `home` is where the logo links (/demo for the demo report). */
+export function ReportView({ report: r, url, home = "/" }: { report: PublicReport; url?: string; home?: string }) {
   const before = r.images.find((i) => i.role === "before");
   const after = r.images.find((i) => i.role === "after");
   const paired = before && after;
@@ -52,7 +53,7 @@ export function ReportView({ report: r, url }: { report: PublicReport; url?: str
   return (
     <div className="mx-auto max-w-4xl px-4 py-4 sm:px-6 sm:py-5">
       <header className="mb-8 flex items-center justify-between gap-4 sm:mb-12">
-        <Link href="/" aria-label="Terragent home" className="text-fg">
+        <Link href={home} aria-label="Terragent home" className="text-fg">
           <LogoLockup className="h-7 sm:h-8" label="" />
         </Link>
         <span className="font-mono text-xs tracking-[0.12em] text-fg-3 uppercase">Report</span>

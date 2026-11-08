@@ -1,0 +1,341 @@
+{
+  "generated_from": "real pipeline run (scripts/demo-build-yc.ts)",
+  "job": {
+    "request_id": "req_demoycsf",
+    "recipe": "change_detection",
+    "bbox": [
+      -122.3956,
+      37.7538,
+      -122.3776,
+      37.7678
+    ],
+    "after_window": {
+      "start": "2026-06-01",
+      "end": "2026-10-31"
+    },
+    "before_window": {
+      "start": "2016-06-01",
+      "end": "2016-10-31"
+    },
+    "max_cloud_pct": 10,
+    "h3_res": 10,
+    "collection": "sentinel-2-l2a"
+  },
+  "result": {
+    "recipe": "change_detection",
+    "bbox": [
+      -122.3956,
+      37.7538,
+      -122.3776,
+      37.7678
+    ],
+    "before": {
+      "collection": "sentinel-2-l2a",
+      "item_id": "S2A_MSIL2A_20160922T190342_R113_T10SEG_20210213T033840",
+      "datetime": "2016-09-22T19:03:42.026000Z",
+      "cloud_pct": 7.11,
+      "clear_fraction": 0.9914
+    },
+    "after": {
+      "collection": "sentinel-2-l2a",
+      "item_id": "S2B_MSIL2A_20261015T185349_R113_T10SEG_20261015T221625",
+      "datetime": "2026-10-15T18:53:49.024000Z",
+      "cloud_pct": 0.01,
+      "clear_fraction": 1
+    },
+    "indices": [
+      {
+        "name": "ndvi",
+        "before_mean": 0.0995,
+        "after_mean": 0.1139,
+        "delta": 0.0144,
+        "unit": null,
+        "affected_area_km2": 0.1949,
+        "threshold": "NDVI changed by more than 0.2 (either direction)"
+      }
+    ],
+    "images": [
+      {
+        "role": "before",
+        "path": "before_true_color.png",
+        "caption": "Before: Sentinel-2 true colour, 22 Sep 2016 (99% of the area clear)."
+      },
+      {
+        "role": "after",
+        "path": "after_true_color.png",
+        "caption": "After: Sentinel-2 true colour, 15 Oct 2026 (100% of the area clear)."
+      },
+      {
+        "role": "index",
+        "path": "index_ndvi.png",
+        "caption": "NDVI (vegetation index) on 15 Oct 2026, Sentinel-2B. Hatched: cloud, shadow, water or no data."
+      },
+      {
+        "role": "change",
+        "path": "change_ndvi.png",
+        "caption": "NDVI change (after minus before) between 22 Sep 2016 and 15 Oct 2026. Hatched: cloud, shadow, water or no data in either scene."
+      }
+    ],
+    "timings_s": {
+      "after_search": 5.09,
+      "before_search": 4.359,
+      "read": 3.091,
+      "analyse": 0.113,
+      "render": 0.158,
+      "h3": 0.029,
+      "total": 12.848
+    },
+    "warnings": [],
+    "h3_cells": 269
+  },
+  "spec": {
+    "request_id": "req_demoycsf",
+    "playbook": "inbound",
+    "location": {
+      "text": "Y Combinator, 580 20th Street, San Francisco",
+      "lat": 37.76078,
+      "lon": -122.38664,
+      "geocoder": "user"
+    },
+    "aoi": {
+      "type": "Polygon",
+      "coordinates": [
+        [
+          [
+            -122.3956,
+            37.7538
+          ],
+          [
+            -122.3776,
+            37.7538
+          ],
+          [
+            -122.3776,
+            37.7678
+          ],
+          [
+            -122.3956,
+            37.7678
+          ],
+          [
+            -122.3956,
+            37.7538
+          ]
+        ]
+      ]
+    },
+    "area_km2": 2.45,
+    "h3_res": 10,
+    "recipe": "change_detection",
+    "data_type": "optical",
+    "min_resolution_m": 10,
+    "max_cloud_pct": 10,
+    "before": {
+      "start": "2016-06-01",
+      "end": "2016-10-31"
+    },
+    "after": {
+      "start": "2026-06-01",
+      "end": "2026-10-31"
+    },
+    "earth_index_hits": [],
+    "reuse_existing": false,
+    "assumptions": [
+      "\"Changed\" means visible change on the ground: buildings, cleared lots, vegetation. Not people or foot traffic.",
+      "Late-summer windows in both years, for the same sun angle and fewer fog days.",
+      "A 1.6 km box around the office, taking in the Dogpatch blocks and the Pier 70 waterfront."
+    ]
+  },
+  "plan": {
+    "request_id": "req_demoycsf",
+    "choice": "free",
+    "free_option": {
+      "provider_id": "pc-sentinel-2-l2a",
+      "before_scene": {
+        "collection": "sentinel-2-l2a",
+        "item_id": "S2A_MSIL2A_20160922T190342_R113_T10SEG_20210213T033840",
+        "datetime": "2016-09-22T19:03:42.026000Z",
+        "cloud_pct": 7.11
+      },
+      "after_scene": {
+        "collection": "sentinel-2-l2a",
+        "item_id": "S2B_MSIL2A_20261015T185349_R113_T10SEG_20261015T221625",
+        "datetime": "2026-10-15T18:53:49.024000Z",
+        "cloud_pct": 0.01
+      },
+      "sufficient": true,
+      "why": "Two near-cloudless Sentinel-2 scenes ten years apart. 10 m shows block-scale change; individual buildings need sharper imagery."
+    },
+    "paid_options": [],
+    "justification": "Free Sentinel-2 answers block-scale change; a sharper archive option is offered for building-level detail.",
+    "data_cost_usd": 0,
+    "quote_requests_sent": []
+  },
+  "quote": {
+    "options": [
+      {
+        "option_id": "A",
+        "label": "Standard: 10 m public satellite data",
+        "answers": "Visible change at 10 m resolution: neighbourhood- and field-scale patterns; not individual buildings. Before and after dates are compared.",
+        "kind": "free_data",
+        "data": [
+          {
+            "provider_id": "pc-sentinel-2-l2a",
+            "product": "public optical scenes",
+            "data_type": "optical",
+            "resolution_m": 10,
+            "epochs": 2,
+            "area_km2": 2.45,
+            "billable_km2": 2.45,
+            "unit_price_usd": 0,
+            "data_cost_usd": 0,
+            "data_cost_range_usd": null,
+            "needs_supplier_quote": false
+          }
+        ],
+        "analysis_cost_usd": 1.5,
+        "risk_buffer_usd": 0,
+        "margin_usd": 27.5,
+        "price_usd": 29,
+        "price_range_usd": null,
+        "delivery_time": "usually within a few hours of accepting",
+        "notes": [
+          "Uses free public imagery; the price covers the analysis and the verified report."
+        ],
+        "confidence": "medium"
+      },
+      {
+        "option_id": "B",
+        "label": "Sharper: 1 m archive imagery (Medium-resolution optical 1–8 m)",
+        "answers": "Visible change at 1 m resolution: individual buildings and roofs are visible. Before and after dates are compared. Measurements come from our automated analysis of free public data, and the purchased imagery is reviewed for the finer detail; you receive derived results, not the raw images.",
+        "kind": "archive",
+        "data": [
+          {
+            "provider_id": "sw-medium-optical",
+            "product": "archive 1 m",
+            "data_type": "optical",
+            "resolution_m": 1,
+            "epochs": 2,
+            "area_km2": 2.45,
+            "billable_km2": 2.45,
+            "unit_price_usd": 2.5,
+            "data_cost_usd": 12.25,
+            "data_cost_range_usd": null,
+            "needs_supplier_quote": false
+          }
+        ],
+        "analysis_cost_usd": 1.5,
+        "risk_buffer_usd": 0,
+        "margin_usd": 20.25,
+        "price_usd": 34,
+        "price_range_usd": null,
+        "delivery_time": "about 2–5 business days after you accept (we order the imagery once you accept)",
+        "notes": [
+          "Paid imagery is bought only after you accept; you receive derived results, not the raw licensed images."
+        ],
+        "confidence": "high"
+      },
+      {
+        "option_id": "C",
+        "label": "New capture: 1 m imagery taken for you (Medium-resolution optical 1–8 m)",
+        "answers": "Visible change at 1 m resolution: individual buildings and roofs are visible. Before and after dates are compared. Includes a new image captured after you accept, so it shows the site as it is now. Measurements come from our automated analysis of free public data, and the purchased imagery is reviewed for the finer detail; you receive derived results, not the raw images.",
+        "kind": "tasking",
+        "data": [
+          {
+            "provider_id": "sw-medium-optical",
+            "product": "archive 1 m",
+            "data_type": "optical",
+            "resolution_m": 1,
+            "epochs": 1,
+            "area_km2": 2.45,
+            "billable_km2": 2.45,
+            "unit_price_usd": 2.5,
+            "data_cost_usd": 6.13,
+            "data_cost_range_usd": null,
+            "needs_supplier_quote": false
+          },
+          {
+            "provider_id": "sw-medium-optical",
+            "product": "tasking 1 m",
+            "data_type": "optical",
+            "resolution_m": 1,
+            "epochs": 1,
+            "area_km2": 2.45,
+            "billable_km2": 25,
+            "unit_price_usd": 3.5,
+            "data_cost_usd": 87.5,
+            "data_cost_range_usd": null,
+            "needs_supplier_quote": false
+          }
+        ],
+        "analysis_cost_usd": 1.5,
+        "risk_buffer_usd": 21.88,
+        "margin_usd": 52.99,
+        "price_usd": 170,
+        "price_range_usd": null,
+        "delivery_time": "about 1–3 weeks after you accept (a new image is captured for you, weather permitting)",
+        "notes": [
+          "A satellite is scheduled only after you accept; clouds can delay an optical capture.",
+          "Medium-resolution optical 1–8 m: billed for the 25 km² minimum order (the area is 2.45 km²).",
+          "Includes a 25% buffer on new-capture data (weather, re-tasking)."
+        ],
+        "confidence": "medium"
+      }
+    ],
+    "recommended_option_id": "A",
+    "notes": []
+  },
+  "public_quote_options": [
+    {
+      "option_id": "A",
+      "label": "Standard: 10 m public satellite data",
+      "answers": "Visible change at 10 m resolution: neighbourhood- and field-scale patterns; not individual buildings. Before and after dates are compared.",
+      "kind": "free_data",
+      "resolution_m": 10,
+      "data_types": [
+        "optical"
+      ],
+      "epochs": 2,
+      "price_usd": 29,
+      "price_range_usd": null,
+      "needs_supplier_quote": false,
+      "delivery_time": "usually within a few hours of accepting",
+      "confidence": "medium",
+      "recommended": true
+    },
+    {
+      "option_id": "B",
+      "label": "Sharper: 1 m archive imagery (Medium-resolution optical 1–8 m)",
+      "answers": "Visible change at 1 m resolution: individual buildings and roofs are visible. Before and after dates are compared. Measurements come from our automated analysis of free public data, and the purchased imagery is reviewed for the finer detail; you receive derived results, not the raw images.",
+      "kind": "archive",
+      "resolution_m": 1,
+      "data_types": [
+        "optical"
+      ],
+      "epochs": 2,
+      "price_usd": 34,
+      "price_range_usd": null,
+      "needs_supplier_quote": false,
+      "delivery_time": "about 2–5 business days after you accept (we order the imagery once you accept)",
+      "confidence": "high",
+      "recommended": false
+    },
+    {
+      "option_id": "C",
+      "label": "New capture: 1 m imagery taken for you (Medium-resolution optical 1–8 m)",
+      "answers": "Visible change at 1 m resolution: individual buildings and roofs are visible. Before and after dates are compared. Includes a new image captured after you accept, so it shows the site as it is now. Measurements come from our automated analysis of free public data, and the purchased imagery is reviewed for the finer detail; you receive derived results, not the raw images.",
+      "kind": "tasking",
+      "resolution_m": 1,
+      "data_types": [
+        "optical"
+      ],
+      "epochs": 1,
+      "price_usd": 170,
+      "price_range_usd": null,
+      "needs_supplier_quote": false,
+      "delivery_time": "about 1–3 weeks after you accept (a new image is captured for you, weather permitting)",
+      "confidence": "medium",
+      "recommended": false
+    }
+  ]
+}
