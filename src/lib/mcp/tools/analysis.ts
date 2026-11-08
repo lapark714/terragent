@@ -1,7 +1,21 @@
-/** OWNER: core builder. Implements the catalog tools of group "analysis" (see src/lib/mcp/catalog.ts). */
+/** Catalog group "analysis": the Analytics agent's pipeline job and results. */
+import { z } from "zod";
+import { AnalysisResult } from "../../domain";
+import { getAnalysisJob, getAnalysisView, saveAnalysis } from "../../pipeline/analyses";
 import type { ToolRegistrar } from "../types";
 
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
 export function register(r: ToolRegistrar): void {
-  // r.tool("<name>", { /* zod shape */ }, async (args, ctx) => { ... });
+  r.tool("get_analysis_job", { request_id: z.string() }, async ({ request_id }) => getAnalysisJob(request_id));
+
+  r.tool(
+    "save_analysis",
+    {
+      request_id: z.string(),
+      result: AnalysisResult.describe("the pipeline's stdout JSON, unchanged"),
+      file_ids: z.record(z.string(), z.string()).describe('{ "<image path from result.images>": "fil_…" } from publish_file'),
+    },
+    async (a, ctx) => saveAnalysis({ requestId: a.request_id, result: a.result, fileIds: a.file_ids }, ctx.agent),
+  );
+
+  r.tool("get_analysis", { request_id: z.string() }, async ({ request_id }) => getAnalysisView(request_id));
 }
