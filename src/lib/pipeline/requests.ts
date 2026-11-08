@@ -1,4 +1,5 @@
 /** OWNER: core builder. Request lifecycle services used by the MCP tools, API routes, webhooks and dashboard. */
+import { scrubText } from "../mcp/scrub";
 import { AGENT_BUDGETS } from "../config";
 import { AgentName, type NewRequestInput, type RequestSource, type RequestStatus, TERMINAL_STATUSES } from "../domain";
 import { env } from "../env";
@@ -127,6 +128,9 @@ export async function handoff(args: {
 }): Promise<{ session_id?: string; card_id?: string; deduped?: true }> {
   const req = await requireRequest(args.requestId);
   if (isTerminal(req)) throw new Error(`Request ${req.id} is ${req.status}; it can't be handed off.`);
+  // The brief becomes the next agent's opening message and is stored in events (returned by get_request): it must
+  // carry no personal data, or Naïve flags that agent's chat and every tool call then waits for a human.
+  args = { ...args, instructions: scrubText(args.instructions, await requestPeopleNames(req)) };
   if (args.status && TERMINAL_STATUSES.has(args.status)) {
     throw new Error(`handoff can't finish a request (status ${args.status}); use the tool that does it (record_screening, deliver_report, or the coordinator's set_status).`);
   }
@@ -263,4 +267,13 @@ export async function requestForSession(sessionId: string): Promise<{ request_id
   if (s) return { request_id: s.request_id, agent: s.agent };
   const r = await queryOne<{ id: string }>("SELECT id FROM requests WHERE $1 = ANY(naive_session_ids) LIMIT 1", [sessionId]);
   return { request_id: r?.id ?? null, agent: null };
+}
+
+async function requestPeopleNames(req: { customer_name: string | null; prospect_id: string | null }): Promise<string[]> {
+  const names = [req.customer_name];
+  if (req.prospect_id) {
+    const p = await queryOne<{ contact_name: string | null }>("SELECT contact_name FROM prospects WHERE id = $1", [req.prospect_id]);
+    names.push(p?.contact_name ?? null);
+  }
+  return names.filter((n): n is string => !!n);
 }

@@ -7,6 +7,7 @@
  * same rules hold for in-process callers (simulator, tests).
  */
 import { redactSecrets } from "../redact";
+import { peopleNamesFor } from "./people";
 import { scrubForAgent } from "./scrub";
 import { createHash, randomBytes } from "node:crypto";
 import type { AuthInfo, CallToolResult, McpServer } from "@modelcontextprotocol/server";
@@ -89,8 +90,8 @@ async function logToolCall(tool: string, args: unknown, ctx: ToolContext, result
 }
 
 /** The boundary to Naïve agents: personal data is scrubbed here (see scrub.ts — it would flag the chat). */
-export function toCallToolResult(result: unknown): CallToolResult {
-  const safe = scrubForAgent(result);
+export function toCallToolResult(result: unknown, names: readonly string[] = []): CallToolResult {
+  const safe = scrubForAgent(result, undefined, names);
   return { content: [{ type: "text", text: JSON.stringify(safe) }], ...(isErrorResult(result) ? { isError: true } : {}) };
 }
 
@@ -102,7 +103,8 @@ export function initServerFor(agent: AgentName) {
       if (!reg) continue; // not implemented yet (the coverage test lists these)
       server.registerTool(spec.name, { description: spec.description, inputSchema: reg.schema }, async (args, ctx) => {
         const sessionId = ctx.http?.req?.headers.get("x-terragent-session") ?? undefined;
-        return toCallToolResult(await runTool(spec.name, args, { agent, sessionId }));
+        const [result, names] = await Promise.all([runTool(spec.name, args, { agent, sessionId }), peopleNamesFor(args)]);
+        return toCallToolResult(result, names);
       });
     }
   };

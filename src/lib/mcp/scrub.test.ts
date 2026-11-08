@@ -27,3 +27,16 @@ describe("scrubForAgent", () => {
     expect((res.content[0] as { text: string }).text).not.toContain("x@y.com");
   });
 });
+
+describe("name scrubbing in free text (live run #2: 'Customer: Laurence' in a brief flagged the chat)", () => {
+  it("replaces the request's known person names, full and by token, in any string", async () => {
+    const { scrubText, scrubForAgent: scrub } = await import("./scrub");
+    expect(scrubText("Customer: Laurence, lapark714@gmail.com, no company.", ["Laurence"]))
+      .toBe(`Customer: ${NAME_PLACEHOLDER}, ${EMAIL_PLACEHOLDER}, no company.`);
+    expect(scrubText("Ask Jane Doe (Ops). Jane said the roof leaked; Doe agreed.", ["Jane Doe"]))
+      .toBe(`Ask ${NAME_PLACEHOLDER} (Ops). ${NAME_PLACEHOLDER} said the roof leaked; ${NAME_PLACEHOLDER} agreed.`);
+    expect(scrubText("Janet runs the mill", ["Jane"])).toBe("Janet runs the mill"); // whole words only
+    const out = scrub({ events: [{ payload: { instructions: "Customer: Laurence" } }] }, undefined, ["Laurence"]) as { events: { payload: { instructions: string } }[] };
+    expect(out.events[0].payload.instructions).toBe(`Customer: ${NAME_PLACEHOLDER}`);
+  });
+});

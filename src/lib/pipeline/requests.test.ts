@@ -48,6 +48,18 @@ describe("inbound lane", () => {
     expect(session).toEqual({ agent: "comms-customer", lane: "inbound" });
   });
 
+  it("strips the customer's name and email from a handoff brief before the next agent or the event log sees it", async () => {
+    const req = await startInboundRequest({ question: "How much burned?", lat: 34.19, lon: -118.13, email: "lapark714@gmail.com", name: "Laurence", source: "portal" });
+    await recordScreening(req.id, { allowed: true, category: "ok", reason: "fine" }, "comms-customer");
+    vi.mocked(startAgentSession).mockClear();
+    await handoff({ requestId: req.id, from: "comms-customer", to: "planner", stage: "planning", instructions: "Customer: Laurence, lapark714@gmail.com, no company. Plan burn severity." });
+    const brief = vi.mocked(startAgentSession).mock.calls[0][1];
+    expect(brief).not.toMatch(/Laurence|lapark714/);
+    expect(brief).toContain("Plan burn severity.");
+    const stored = JSON.stringify((await events(req.id)).filter((e) => e.type === "handoff").map((e) => e.payload));
+    expect(stored).not.toMatch(/Laurence|lapark714/);
+  });
+
   it("won't pass a customer request past screening until it is allowed", async () => {
     const req = await startInboundRequest({ question: "Has the river flooded the farm?", lat: 40, lon: -90, source: "portal" });
     await expect(handoff({ requestId: req.id, from: "comms-customer", to: "planner", stage: "planning", instructions: "Plan it" })).rejects.toThrow(/screening/);
