@@ -44,10 +44,12 @@ describe("demoFrame", () => {
     for (const e of demoFrame(c, T0 + 1000).progress.events) expect(Date.parse(e.at)).toBeLessThanOrEqual(T0 + 1000);
   });
 
-  it("a paid option waits for the imagery to arrive", () => {
-    const f = demoFrame(clock({ acceptedAt: T0 + 60_000, optionId: "B" }), T0 + 600_000);
-    expect(f.progress.status).toBe("awaiting_approval");
-    expect(f.progress.terminal).toBe(false);
+  it("a paid option orders the imagery, then runs through to the same report", () => {
+    const c = clock({ acceptedAt: T0 + 60_000, optionId: "B" });
+    expect(demoFrame(c, T0 + 62_000).progress.status).toBe("awaiting_approval");
+    const done = demoFrame(c, T0 + 600_000).progress;
+    expect(done.status).toBe("delivered");
+    expect(done.report?.path).toBe("/demo/report/req_demoabc123?option=B");
   });
 });
 
@@ -58,5 +60,7 @@ describe("demoReport", () => {
     expect(r.images.every((i) => i.src.startsWith("/demo/yc-sf/"))).toBe(true);
     expect(r.sources).toHaveLength(2);
     expect(r.sources.every((s) => s.url?.startsWith("https://planetarycomputer.microsoft.com/"))).toBe(true);
+    expect(r.paidDataEstimate).not.toBeNull();
+    expect(demoReport("req_demoabc123", { paid: true }).paidDataEstimate).toBeNull();
   });
 });
