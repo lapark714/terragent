@@ -1,24 +1,40 @@
 /**
- * The business side, derived from the same dashboard endpoints mission control reads (no new queries).
- * Pure functions: the sales console calls them on every poll, and the tests feed them fixtures.
+ * The Operations tab, derived from the same dashboard endpoints the Signal Engine reads (no new queries).
+ * Pure functions: the console calls them on every poll, and the tests feed them fixtures.
  */
-import type { Approvals, Board, BoardRequest, Decisions, MarketPrices, Money, RequestMoney } from "@/lib/dashboard/types";
+import type { Board, BoardRequest, Decisions, MarketPrices, Money } from "@/lib/dashboard/types";
 import type { Playbook, RequestStatus } from "@/lib/domain";
 
-/** Where a customer request stands as a deal. Order is the order founders should look at them. */
-export const DEAL_STAGES = ["founder", "owed", "quoted", "unpriced", "paid", "lost"] as const;
+/** The four sections of the Deals panel, in the order a request moves through them. */
+export const DEAL_STAGES = ["outreach", "negotiation", "fulfillment", "completed"] as const;
 export type DealStage = (typeof DEAL_STAGES)[number];
 
 export const DEAL_STAGE_LABEL: Record<DealStage, string> = {
-  founder: "Quote waiting on a founder",
-  owed: "Delivered, not paid",
-  quoted: "Quoted",
-  unpriced: "Not priced yet",
-  paid: "Paid",
-  lost: "Lost",
+  outreach: "Outreach pending",
+  negotiation: "In negotiation",
+  fulfillment: "Pending fulfillment",
+  completed: "Completed",
 };
 
-const LOST: ReadonlySet<RequestStatus> = new Set(["refused", "failed", "cancelled"]);
+const STAGE_OF: Partial<Record<RequestStatus, DealStage>> = {
+  received: "outreach",
+  screening: "outreach",
+  clarifying: "outreach",
+  planning: "outreach",
+  acquiring: "outreach",
+  pricing: "outreach",
+  quoted: "negotiation",
+  awaiting_approval: "negotiation",
+  fetching: "fulfillment",
+  analyzing: "fulfillment",
+  verifying: "fulfillment",
+  revising: "fulfillment",
+  delivering: "fulfillment",
+  delivered: "completed",
+};
+
+/** Refused, failed and cancelled requests are not deals; they get no stage. */
+export const dealStage = (status: RequestStatus): DealStage | null => STAGE_OF[status] ?? null;
 
 export interface Deal {
   id: string;
@@ -29,66 +45,87 @@ export interface Deal {
   question: string | null;
   location: string | null;
   owner: string | null;
+  /** The quote to the customer; null until priced. */
   price: number | null;
+  /** What the agents and data have cost us on this request so far. */
   cost: number;
   paid: number;
-  /** Price minus what it cost us to make so far; null until there is a price. */
-  margin: number | null;
+  /** Quote minus cost; null until priced. */
+  profit: number | null;
+  /** Data sources the acquisition agent chose for it, from the recent decision log. */
+  sources: string[];
+  /** Whether paid imagery was chosen; null when no free-vs-paid decision is in the recent log. */
+  paidData: boolean | null;
   updatedAt: string | null;
-}
-
-export function dealStage(r: RequestMoney, heldQuotes: ReadonlySet<string>): DealStage {
-  if (r.paid > 0) return "paid";
-  if (LOST.has(r.status)) return "lost";
-  if (heldQuotes.has(r.id)) return "founder";
-  if (r.price === null) return "unpriced";
-  if (r.status === "delivered") return "owed";
-  return "quoted";
 }
 
 const byId = (board: Board | null) => new Map<string, BoardRequest>((board?.requests ?? []).map((b) => [b.id, b]));
 
-/** Customer requests (free samples are outreach, not deals), most urgent stage first, newest first within a stage. */
-export function deals(money: Money, board: Board | null, approvals: Approvals | null): Deal[] {
-  const cards = byId(board);
-  const held = new Set((approvals?.quotes ?? []).map((q) => q.request));
-  return money.perRequest
-    .filter((r) => !r.sample)
-    .map((r): Deal => {
-      const b = cards.get(r.id);
-      return {
-        id: r.id,
-        playbook: r.playbook,
-        stage: dealStage(r, held),
-        status: r.status,
-        customer: b?.customer ?? null,
-        question: b?.question ?? null,
-        location: b?.location ?? null,
-        owner: b?.owner ?? null,
-        price: r.price,
-        cost: r.cost,
-        paid: r.paid,
-        margin: r.price === null ? null : r.price - r.cost,
-        updatedAt: b?.updatedAt ?? null,
-      };
-    })
-    .sort((a, b) => DEAL_STAGES.indexOf(a.stage) - DEAL_STAGES.indexOf(b.stage) || (b.updatedAt ?? "").localeCompare(a.updatedAt ?? ""));
-}
-
-export interface DealTotals {
-  byStage: Record<DealStage, { n: number; value: number }>;
-  /** Quoted, waiting on a founder, or delivered but unpaid: money we expect but don't have. */
-  open: number;
-  owed: number;
-}
-
-export function dealTotals(list: Deal[]): DealTotals {
-  const byStage = Object.fromEntries(DEAL_STAGES.map((s) => [s, { n: 0, value: 0 }])) as DealTotals["byStage"];
-  for (const d of list) {
-    byStage[d.stage].n += 1;
-    byStage[d.stage].value += d.stage === "paid" ? d.paid : (d.price ?? 0);
+/** Per request: the sources chosen and the free-vs-paid call, from the recent decision log. */
+export function requestSources(d: Decisions | null): Map<string, { sources: string[]; paidData: boolean | null }> {
+  const m = new Map<string, { sources: string[]; paidData: boolean | null }>();
+  for (const row of d?.rows ?? []) {
+    if (!row.request) continue;
+    const e = m.get(row.request) ?? { sources: [], paidData: null };
+    if (row.kind === "source_selection") {
+      const name = sourceName(row.choice);
+      if (!e.sources.includes(name)) e.sources.push(name);
+    }
+    if (row.kind === "free_vs_paid") e.paidData = row.choice === "paid";
+    m.set(row.request, e);
   }
-  return { byStage, open: byStage.founder.value + byStage.quoted.value + byStage.owed.value, owed: byStage.owed.value };
+  return m;
+}
+
+/** Customer requests sorted into the four sections (free samples are outreach to prospects, not deals), newest first. */
+export function deals(money: Money, board: Board | null, decisions: Decisions | null): Deal[] {
+  const cards = byId(board);
+  const src = requestSources(decisions);
+  const out: Deal[] = [];
+  for (const r of money.perRequest) {
+    const stage = dealStage(r.status);
+    if (r.sample || !stage) continue;
+    const b = cards.get(r.id);
+    const s = src.get(r.id);
+    out.push({
+      id: r.id,
+      playbook: r.playbook,
+      stage,
+      status: r.status,
+      customer: b?.customer ?? null,
+      question: b?.question ?? null,
+      location: b?.location ?? null,
+      owner: b?.owner ?? null,
+      price: r.price,
+      cost: r.cost,
+      paid: r.paid,
+      profit: r.price === null ? null : r.price - r.cost,
+      sources: s?.sources ?? [],
+      paidData: s?.paidData ?? null,
+      updatedAt: b?.updatedAt ?? null,
+    });
+  }
+  return out.sort((a, b) => (b.updatedAt ?? "").localeCompare(a.updatedAt ?? ""));
+}
+
+export function byStage(list: Deal[]): Record<DealStage, Deal[]> {
+  const g = { outreach: [], negotiation: [], fulfillment: [], completed: [] } as Record<DealStage, Deal[]>;
+  for (const d of list) g[d.stage].push(d);
+  return g;
+}
+
+/** Money we expect but don't have: open quotes, work in progress, and delivered-but-unpaid. */
+export function openValue(list: Deal[]): { open: number; owed: number; owedCount: number } {
+  let open = 0, owed = 0, owedCount = 0;
+  for (const d of list) {
+    if (d.price === null || d.paid >= d.price) continue;
+    open += d.price - d.paid;
+    if (d.stage === "completed") {
+      owed += d.price - d.paid;
+      owedCount += 1;
+    }
+  }
+  return { open, owed, owedCount };
 }
 
 export interface Product {

@@ -33,7 +33,7 @@ export function MissionControl({ initialLive, initialGlobe }: { initialLive: Liv
       <DashboardHeader current="signals" />
       {suspended && (
         <div role="alert" className="mx-2 rounded-lg border border-alert/60 bg-alert/10 px-4 py-2.5 text-sm">
-          <span className="font-semibold">Database paused — quota hit; a founder must check Neon (NOTES H4c).</span>{" "}
+          <span className="font-semibold">Database paused — Neon quota reached (NOTES H4c).</span>{" "}
           <span className="text-fg-2">Panels keep their last numbers and check again once a minute.</span>
         </div>
       )}

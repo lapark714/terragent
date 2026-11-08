@@ -1,16 +1,16 @@
 "use client";
 /**
  * Operations (the /dashboard tab), for founders: deals and money first, then what we've made, how our price
- * compares, and where the data comes from. Reads the same cached endpoints as /dashboard; nothing new is queried.
+ * compares, and where the data comes from. Reads the same cached endpoints as the Signal Engine; nothing new is queried.
  */
-import type { Approvals, LiveSnapshot, MarketResponse } from "@/lib/dashboard/types";
+import type { LiveSnapshot, MarketResponse } from "@/lib/dashboard/types";
 import { count, usd } from "../../format";
 import { usePoll } from "../../usePoll";
 import { DashboardHeader } from "../DashboardHeader";
 import { keepLastGood } from "../keepLastGood";
 import { Panel, PanelData, Quiet } from "../Panel";
 import { DealsPanel } from "./DealsPanel";
-import { dataSources, deals as toDeals, dealTotals, ourPrices, products as toProducts } from "./model";
+import { dataSources, deals as toDeals, openValue, ourPrices, products as toProducts } from "./model";
 import { PricePanel } from "./PricePanel";
 import { ProductsPanel } from "./ProductsPanel";
 import { SourcesPanel } from "./SourcesPanel";
@@ -30,24 +30,20 @@ function Kpi({ label, value, note, tone }: { label: string; value: React.ReactNo
   );
 }
 
-export function SalesConsole({ initialLive, initialApprovals, initialMarket }: {
-  initialLive: LiveSnapshot | null;
-  initialApprovals: Approvals | null;
-  initialMarket: MarketResponse | null;
-}) {
+export function SalesConsole({ initialLive, initialMarket }: { initialLive: LiveSnapshot | null; initialMarket: MarketResponse | null }) {
   const live = usePoll<LiveSnapshot>("/api/dashboard/live", 6_000, initialLive, keepLastGood);
   const suspended = live.data?.dbSuspended === true;
-  const approvals = usePoll<Approvals>("/api/dashboard/approvals", suspended ? PAUSED_POLL_MS : 10_000, initialApprovals);
   const market = usePoll<MarketResponse>("/api/dashboard/market", suspended ? PAUSED_POLL_MS : 60_000, initialMarket);
 
   const s = live.data;
   const money = s?.money.ok ? s.money.data : null;
   const board = s?.board.ok ? s.board.data : null;
   const overview = s?.overview.ok ? s.overview.data : null;
-  const dealList = money ? toDeals(money, board, approvals.data) : [];
-  const totals = dealTotals(dealList);
-  const paidDeals = dealList.filter((d) => d.stage === "paid");
-  const paidMargin = paidDeals.reduce((t, d) => t + d.paid - d.cost, 0);
+  const decisions = s?.decisions.ok ? s.decisions.data : null;
+  const dealList = money ? toDeals(money, board, decisions) : [];
+  const value = openValue(dealList);
+  const paidDeals = dealList.filter((d) => d.stage === "completed" && d.paid > 0);
+  const paidProfit = paidDeals.reduce((t, d) => t + d.paid - d.cost, 0);
   const dash = "–";
 
   return (
@@ -55,25 +51,24 @@ export function SalesConsole({ initialLive, initialApprovals, initialMarket }: {
       <DashboardHeader current="operations" />
       <header className="flex flex-col gap-2.5 px-2">
 
-        <dl className="instrument grid-cols-2 overflow-hidden rounded-lg sm:grid-cols-3 xl:grid-cols-6" aria-label="Operations overview">
-          <Kpi label="Open deals" value={money ? usd(totals.open) : dash} note={money && `${count(totals.byStage.quoted.n + totals.byStage.founder.n + totals.byStage.owed.n)} quoted or owed`} tone="bg-inbound" />
-          <Kpi label="Delivered, not paid" value={money ? usd(totals.owed) : dash} note={money && `${count(totals.byStage.owed.n)} to follow up`} tone="bg-alert" />
-          <Kpi label="Quotes waiting on a founder" value={money ? count(totals.byStage.founder.n) : dash} note={money && (totals.byStage.founder.value ? `${usd(totals.byStage.founder.value)} above the auto-approve cap` : "none above the cap")} tone="bg-human" />
+        <dl className="instrument grid-cols-2 overflow-hidden rounded-lg sm:grid-cols-3 xl:grid-cols-5" aria-label="Operations overview">
+          <Kpi label="Open deals" value={money ? usd(value.open) : dash} note="quoted, in progress or owed" tone="bg-inbound" />
+          <Kpi label="Delivered, not paid" value={money ? usd(value.owed) : dash} note={money && `${count(value.owedCount)} to follow up`} tone="bg-alert" />
           <Kpi label="Revenue paid" value={money ? usd(money.revenue.paid) : dash} note={money && `${count(money.revenue.paidCount)} payments; ${usd(money.revenue.committed)} committed`} tone="bg-forest" />
-          <Kpi label="Margin on paid deals" value={money && paidDeals.length ? usd(paidMargin) : dash} note={money && `${count(paidDeals.length)} paid in the recent requests`} />
+          <Kpi label="Profit on paid deals" value={money && paidDeals.length ? usd(paidProfit) : dash} note={money && `${count(paidDeals.length)} paid in the recent requests`} />
           <Kpi label="Spend" value={money ? usd(money.spend.total) : dash} note={overview ? `${count(overview.reportsDelivered)} reports delivered` : undefined} />
         </dl>
       </header>
 
       {suspended && (
         <div role="alert" className="mx-2 rounded-lg border border-alert/60 bg-alert/10 px-4 py-2.5 text-sm">
-          <span className="font-semibold">Database paused — quota hit; a founder must check Neon (NOTES H4c).</span>{" "}
+          <span className="font-semibold">Database paused — Neon quota reached (NOTES H4c).</span>{" "}
           <span className="text-fg-2">Panels keep their last numbers and check again once a minute.</span>
         </div>
       )}
 
       <main className="instrument mx-2 grid-cols-1 overflow-hidden rounded-lg xl:grid-cols-12">
-        <Panel title="Deals" meta="Customer requests by where the money stands" className="h-[34rem] xl:col-span-12">
+        <Panel title="Deals" meta="Customer requests, from first contact to paid" className="h-[34rem] xl:col-span-12">
           <PanelData result={s?.money}>{() => <DealsPanel deals={dealList} />}</PanelData>
         </Panel>
         <Panel title="Products made" meta="Delivered reports and free samples" className="h-[30rem] xl:col-span-6">
@@ -90,7 +85,6 @@ export function SalesConsole({ initialLive, initialApprovals, initialMarket }: {
           <SourcesPanel
             spend={money?.spend ?? null}
             sources={s?.decisions.ok ? dataSources(s.decisions.data) : null}
-            orders={approvals.data?.orders ?? null}
           />
         </Panel>
       </main>

@@ -1,8 +1,6 @@
-"use client";
-/** Where the data comes from and what it costs: spend by service, imagery the agents chose, paid options they passed over, held orders. */
-import type { Money, PendingOrder } from "@/lib/dashboard/types";
-import { ago, clockUtc, count, usd } from "../../format";
-import { useNow } from "../../useNow";
+/** Where the data comes from and what it costs: spend by service, imagery the agents chose, and paid options they passed over. */
+import type { Money } from "@/lib/dashboard/types";
+import { count, usd } from "../../format";
 import { Quiet } from "../Panel";
 import type { dataSources } from "./model";
 
@@ -15,8 +13,7 @@ function Sub({ title, children }: { title: string; children: React.ReactNode }) 
   );
 }
 
-export function SourcesPanel({ spend, sources, orders }: { spend: Money["spend"] | null; sources: ReturnType<typeof dataSources> | null; orders: PendingOrder[] | null }) {
-  const now = useNow();
+export function SourcesPanel({ spend, sources }: { spend: Money["spend"] | null; sources: ReturnType<typeof dataSources> | null }) {
   const services = spend
     ? [
         { label: "Naïve (agents, models, browser)", usd: spend.naive },
@@ -29,7 +26,7 @@ export function SourcesPanel({ spend, sources, orders }: { spend: Money["spend"]
   const maxUsed = Math.max(1, ...(sources?.used ?? []).map((u) => u.requests));
 
   return (
-    <div className="grid h-full min-h-0 grid-cols-1 gap-5 md:grid-cols-2 xl:grid-cols-4">
+    <div className="grid h-full min-h-0 grid-cols-1 gap-5 md:grid-cols-2 xl:grid-cols-3">
       <Sub title="Spend by service">
         {spend ? (
           <ul className="flex flex-col gap-1.5">
@@ -85,30 +82,6 @@ export function SourcesPanel({ spend, sources, orders }: { spend: Money["spend"]
         <p className="text-xs text-fg-3">Each time free imagery answered the question, the agents logged the paid option they didn&apos;t need.</p>
       </Sub>
 
-      <Sub title="Paid orders held for a founder">
-        {orders === null ? (
-          <Quiet>Orders aren&apos;t available right now.</Quiet>
-        ) : orders.length ? (
-          <ul className="flex flex-col divide-y divide-line text-xs">
-            {orders.map((o) => (
-              <li key={o.id} className="flex flex-col gap-0.5 py-1.5">
-                <span className="flex items-baseline justify-between gap-3">
-                  <span className="min-w-0 truncate" title={o.product}>{o.product}</span>
-                  <span className="shrink-0 tabular-nums">{usd(o.supplierQuoteUsd ?? o.estCostUsd)}</span>
-                </span>
-                <span className="text-fg-3">
-                  {o.provider}
-                  {o.request && <>, <span className="font-mono">{o.request}</span></>}
-                  {o.supplierQuoteUsd === null ? ", estimate" : ", supplier quote"}, {now ? `${ago(o.at, now)} ago` : clockUtc(o.at)}
-                </span>
-                <span className="line-clamp-2 text-fg-2">{o.justification}</span>
-              </li>
-            ))}
-          </ul>
-        ) : (
-          <Quiet>No paid order is waiting. Agents only prepare one when free data can&apos;t answer.</Quiet>
-        )}
-      </Sub>
     </div>
   );
 }
