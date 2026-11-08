@@ -7,6 +7,7 @@
  * same rules hold for in-process callers (simulator, tests).
  */
 import { redactSecrets } from "../redact";
+import { scrubForAgent } from "./scrub";
 import { createHash, randomBytes } from "node:crypto";
 import type { AuthInfo, CallToolResult, McpServer } from "@modelcontextprotocol/server";
 import { createMcpHandler, withMcpAuth } from "mcp-handler";
@@ -87,8 +88,10 @@ async function logToolCall(tool: string, args: unknown, ctx: ToolContext, result
   }
 }
 
+/** The boundary to Naïve agents: personal data is scrubbed here (see scrub.ts — it would flag the chat). */
 export function toCallToolResult(result: unknown): CallToolResult {
-  return { content: [{ type: "text", text: JSON.stringify(result) }], ...(isErrorResult(result) ? { isError: true } : {}) };
+  const safe = scrubForAgent(result);
+  return { content: [{ type: "text", text: JSON.stringify(safe) }], ...(isErrorResult(result) ? { isError: true } : {}) };
 }
 
 /** Register the agent's catalog tools on one McpServer. */
