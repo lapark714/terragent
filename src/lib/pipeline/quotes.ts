@@ -322,10 +322,13 @@ export async function createQuote(a: CreateQuoteInput, actor: string): Promise<C
   // An expired quote can't be sent or accepted, so it falls through and is replaced.
   if (existing && (existing.status === "approved" || existing.status === "sent") && !isQuoteExpired(existing) &&
       fingerprint(existing.options ?? [], existing.recommended_option_id) === fingerprint(options, rec.option_id)) {
+    warnings.push(`Same options as quote ${existing.id} (${existing.status}); returned it unchanged.`);
+    // Still unsent: the first call's handoff may have failed, so try it again (handoff() dedupes a retry right after one that worked).
+    const passed = existing.status === "approved"
+      ? await handQuoteToComms({ req, quoteId: existing.id, optionCount: options.length, rec, actor, warnings })
+      : { handed: null, next: "Nothing more to do: comms-customer has this quote. End your turn." };
     return {
-      quote: quoteView(existing), recommended_option_id: rec.option_id, valid_until: iso(existing.valid_until), handoff: null,
-      warnings: [...warnings, `Same options as quote ${existing.id} (${existing.status}); returned it unchanged.`],
-      next: "Nothing more to do: comms-customer has this quote. End your turn.",
+      quote: quoteView(existing), recommended_option_id: rec.option_id, valid_until: iso(existing.valid_until), handoff: passed.handed, warnings, next: passed.next,
     };
   }
   if (existing && !["declined", "expired", "superseded"].includes(existing.status)) {
@@ -363,36 +366,40 @@ export async function createQuote(a: CreateQuoteInput, actor: string): Promise<C
   }, req.id);
   await setStatus(req.id, "quoted", actor, `Quote ${id}: ${options.length} option(s), recommended ${rec.option_id} at ${fmtPrice(rec)}; waiting for the customer`);
 
-  let handed: CreateQuoteSaved["handoff"] = null;
-  const contact = !!(req.customer_email || req.thread_id);
-  if (contact) {
-    try {
-      handed = await handoff({
-        requestId: req.id, from: actor, to: "comms-customer", stage: "quote",
-        instructions:
-          `Quote ${id} is ready: ${options.length} option(s), recommended ${rec.option_id} (${fmtPrice(rec)}). Send it with send_quote. ` +
-          "When the customer replies, call accept_quote with the option they name (a plain yes means the recommended one). If they decline " +
-          "or ask for changes, add_note with what they want and hand back to pricing (stage pricing). Never start work without an accepted option",
-      });
-    } catch (e) {
-      warnings.push(`Handoff to comms-customer failed: ${errorMessage(e)}`);
-    }
-  } else {
-    warnings.push(
+  const passed = await handQuoteToComms({ req, quoteId: id, optionCount: options.length, rec, actor, warnings });
+  const quote = (await getQuote(id))!;
+  return {
+    quote: quoteView(quote), recommended_option_id: rec.option_id, valid_until: validUntil.toISOString(), warnings, handoff: passed.handed, next: passed.next,
+  };
+}
+
+/**
+ * Hand a saved, unsent quote to comms-customer to email. A failed handoff is a warning: the quote stays saved and the
+ * coordinator's stuck list shows it (quote_not_sent). An API request has nobody to email.
+ */
+async function handQuoteToComms(
+  a: { req: RequestRow; quoteId: string; optionCount: number; rec: QuoteOption; actor: string; warnings: string[] },
+): Promise<{ handed: CreateQuoteSaved["handoff"]; next: string }> {
+  if (!a.req.customer_email && !a.req.thread_id) {
+    a.warnings.push(
       "No email or thread on this request (API): the client sees the options and accept_url in GET /api/answer/{id} and accepts with " +
         "POST /api/quotes/accept.",
     );
+    return { handed: null, next: "Quote saved; the API client accepts it from its status response (GET /api/answer/{id}). End your turn." };
   }
-
-  const quote = (await getQuote(id))!;
-  return {
-    quote: quoteView(quote), recommended_option_id: rec.option_id, valid_until: validUntil.toISOString(), warnings, handoff: handed,
-    next: handed
-      ? "Done: comms-customer sends the quote and waits for the customer's choice. Don't hand off again; end your turn."
-      : contact
-        ? "Quote saved but the handoff failed (see warnings): hand off to comms-customer (stage quote) to send it."
-        : "Quote saved; the API client accepts it from its status response (GET /api/answer/{id}). End your turn.",
-  };
+  try {
+    const handed = await handoff({
+      requestId: a.req.id, from: a.actor, to: "comms-customer", stage: "quote",
+      instructions:
+        `Quote ${a.quoteId} is ready: ${a.optionCount} option(s), recommended ${a.rec.option_id} (${fmtPrice(a.rec)}). Send it with send_quote. ` +
+        "When the customer replies, call accept_quote with the option they name (a plain yes means the recommended one). If they decline " +
+        "or ask for changes, add_note with what they want and hand back to pricing (stage pricing). Never start work without an accepted option",
+    });
+    return { handed, next: "Done: comms-customer sends the quote and waits for the customer's choice. Don't hand off again; end your turn." };
+  } catch (e) {
+    a.warnings.push(`Handoff to comms-customer failed: ${errorMessage(e)}`);
+    return { handed: null, next: "Quote saved but the handoff failed (see warnings): hand off to comms-customer (stage quote) to send it." };
+  }
 }
 
 // ---------------------------------------------------------------------------

@@ -178,7 +178,7 @@ export const TOOLS: readonly ToolSpec[] = [
   { name: "get_spend_summary", group: "coordinator", agents: ["coordinator", "pricing"], permission: "allow",
     description: "Spend vs revenue overall, per agent and per request; remaining Naïve and Monid budget." },
   { name: "list_stuck_requests", group: "coordinator", agents: ["coordinator"], permission: "allow",
-    description: "Requests that have not moved for too long, failed, or are waiting on a human." },
+    description: "Requests that have not moved for too long, failed, are waiting on a human, or had a handoff dropped (each with a reason; a dropped handoff has a hint naming the call that recovers it)." },
 
   // --- monitoring (run by Analytics on cron) ------------------------------------
   { name: "list_due_monitors", group: "monitoring", agents: ["analytics"], permission: "allow",

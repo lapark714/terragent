@@ -24,7 +24,7 @@
  */
 import type { AcquisitionPlan } from "../domain";
 import { query, queryOne } from "./db";
-import { WAITING_ORDER_STATUSES } from "./gates";
+import { acceptedOptionBuysData, WAITING_ORDER_STATUSES } from "./gates";
 import type { RequestRow } from "./requests";
 
 export interface HandoffEdge { from: string; to: string; stage: string }
@@ -92,6 +92,17 @@ async function consumerBlockedReason(req: RequestRow, a: HandoffEdge): Promise<s
     if (waiting.length) {
       return `Request ${id} waits on paid data a founder hasn't marked delivered (orders ${waiting.map((o) => o.id).join(", ")}): the analysis starts by ` +
         "itself when a founder marks it delivered. terragent.add_note and leave it waiting.";
+    }
+    // An accepted paid option never runs on free data, even with no order held (never prepared, or rejected).
+    const paidData = await acceptedPaidData(req, plan);
+    if (paidData && !paidData.delivered) {
+      return `Request ${id}'s accepted option buys paid data and none has been marked delivered: the analysis starts when a founder marks it delivered. ` +
+        "If no order is held, hand it to acquisition (stage acquisition) to prepare one; never run it on free data.";
+    }
+    // The coordinator doesn't start paid work: a delivery whose analysis never started goes through acquisition
+    // (also once acquisition has it). An analysis already running can be re-kicked like any stale request.
+    if (paidData && a.from === "coordinator" && (req.status === "awaiting_approval" || req.status === "acquiring")) {
+      return `The paid data on ${id} arrived but the analysis never started: hand it to acquisition (stage acquisition), saying so, with the order ids.`;
     }
   }
 
@@ -214,6 +225,17 @@ async function analysisIsCurrent(requestId: string): Promise<boolean> {
     [requestId],
   );
   return row?.ok === true;
+}
+
+/** For a request whose accepted option buys data: whether any of it has been delivered. Null for every other request. */
+async function acceptedPaidData(req: Pick<RequestRow, "quote_id">, plan: AcquisitionPlan | null) {
+  if (!req.quote_id) return null;
+  const quote = await queryOne<{ accepted_option_id: string | null; options: unknown; delivered: boolean }>(
+    `SELECT q.accepted_option_id, q.options, EXISTS (SELECT 1 FROM orders o WHERE o.request_id = q.request_id AND o.status = 'delivered') AS delivered
+     FROM quotes q WHERE q.id = $1 AND q.status = 'accepted'`,
+    [req.quote_id],
+  );
+  return quote && acceptedOptionBuysData(quote, plan?.choice) ? { delivered: quote.delivered } : null;
 }
 
 async function currentReport(req: Pick<RequestRow, "report_id">) {
