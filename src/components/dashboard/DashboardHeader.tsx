@@ -1,6 +1,7 @@
 /** The dashboard's top bar: the wordmark, and under it the switch between the Operations and Signal Engine tabs. */
+import Image from "next/image";
 import Link from "next/link";
-import { Wordmark } from "../site/Wordmark";
+import logo from "./terragent-logo.png";
 
 const TABS = [
   { key: "operations", label: "Operations", href: "/dashboard" },
@@ -12,7 +13,9 @@ export type DashboardTab = (typeof TABS)[number]["key"];
 export function DashboardHeader({ current }: { current: DashboardTab }) {
   return (
     <header className="flex flex-col items-start gap-2.5 px-4 pt-3">
-      <Wordmark />
+      <Link href="/" className="rounded-sm">
+        <Image src={logo} alt="Terragent" loading="eager" className="h-8 w-auto" />
+      </Link>
       <nav aria-label="Dashboard" className="flex items-center gap-1 rounded-full border border-line-strong p-0.5 text-xs">
         {TABS.map((t) =>
           t.key === current ? (
