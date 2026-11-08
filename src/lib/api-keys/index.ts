@@ -59,4 +59,4 @@ export async function tagApiRequest(requestId: string, key: ApiKey, callbackUrl?
   await db.query("UPDATE requests SET meta = meta || $2::jsonb WHERE id = $1", [requestId, JSON.stringify(meta)]);
 }
 
-export { clientIp, hitRateLimit, rateLimitHeaders, type RateLimitResult } from "./rate-limit";
+export { clientIp, hitMemoryLimit, hitRateLimit, rateLimitHeaders, resetMemoryLimits, type RateLimitResult } from "./rate-limit";

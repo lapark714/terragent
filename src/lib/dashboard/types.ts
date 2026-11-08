@@ -125,6 +125,29 @@ export interface LiveSnapshot {
   activity: Panel<ActivityRow[]>;
 }
 
+/** One cited price for what buyers do today instead of a satellite answer (market_prices). */
+export interface MarketPrice {
+  id: string;
+  playbook: Playbook;
+  alternative: string;
+  low: number | null;
+  high: number | null;
+  unit: string;
+  turnaround: string | null;
+  sourceTitle: string;
+  /** http(s) only; null when the stored link isn't one. */
+  sourceUrl: string | null;
+  /** YYYY-MM-DD the researcher read the page. */
+  retrievedAt: string;
+}
+export interface MarketPrices {
+  rows: MarketPrice[];
+  /** Our own floor price for a report from free data (PRICING.minReportUsd), for the comparison. */
+  ourFromUsd: number;
+}
+/** GET /api/dashboard/market. */
+export type MarketResponse = Panel<MarketPrices> & { dbSuspended: boolean };
+
 export interface PendingNaiveApproval {
   sessionId: string;
   agent: string;

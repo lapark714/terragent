@@ -116,13 +116,22 @@ def _tile_cloud(item: dict) -> float:
     return 100.0 if cloud is None else float(cloud)
 
 
-def _search(sensor: Sensor, bbox: stac.BBox, window: Window, max_cloud_pct: float, pin: dict | None) -> list[dict]:
+def _search(
+    sensor: Sensor, bbox: stac.BBox, window: Window, max_cloud_pct: float, pin: dict | None, earliest: bool = False
+) -> list[dict]:
+    """Candidates in preference order: newest first, or oldest first with `earliest`. The STAC page is sorted the
+    same way, so a long window (event date to today) still returns the first scenes after the event."""
     query = {"eo:cloud_cover": {"lte": max(TILE_CLOUD_CAP, max_cloud_pct)}, **sensor.query}
+
+    def run(q: dict) -> list[dict]:
+        cands = stac.candidates(stac.search(sensor.collection, bbox, window, q, oldest_first=earliest), bbox)
+        return cands[::-1] if earliest else cands  # candidates() sorts newest first
+
     if pin is not None and pin["collection"] == sensor.collection:
-        pinned = stac.candidates(stac.search(sensor.collection, bbox, window, {**query, **stac.tile_query(pin)}), bbox)
+        pinned = run({**query, **stac.tile_query(pin)})
         if pinned:
             return pinned
-    return stac.candidates(stac.search(sensor.collection, bbox, window, query), bbox)
+    return run(query)
 
 
 def find_scene(
@@ -150,7 +159,7 @@ def find_scene(
 
     tried = (sensor, LANDSAT) if sensor is SENTINEL2 else (sensor,)
     for s in tried:
-        cands = _search(s, bbox, window, max_cloud_pct, pin)
+        cands = _search(s, bbox, window, max_cloud_pct, pin, earliest)
         if cands:
             break
     else:
@@ -160,8 +169,6 @@ def find_scene(
         notes.append(f"Used {s.name} (30 m) for the {label} scene: no {sensor.name} scene in {window}.")
 
     need = min_clear(max_cloud_pct)
-    if earliest:
-        cands.reverse()
     screened = _screen_all(cands[:MAX_SCREEN], s, bbox)
     best = pick(screened, need)
     if best and best.clear < need and len(cands) > MAX_SCREEN:

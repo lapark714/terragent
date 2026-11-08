@@ -8,7 +8,7 @@ import { isSuppressed } from "../email/optout";
 import { logEvent } from "../events";
 import { newId } from "../ids";
 import { createRequest, handoff } from "../pipeline/requests";
-import { capReachedMessage, sampleCap } from "./allocation";
+import { capReachedMessage, sampleCap, withOneStarted } from "./allocation";
 import { chooseChannel, emailDomain, isPersonalMailbox, isSharedHost, normalizeDomain } from "./channel";
 import { fail } from "./errors";
 import { iso, num, truncate, type OutboundPlaybook } from "./util";
@@ -267,6 +267,5 @@ export async function requestFreeSample(a: { prospectId: string; actor: string }
   await logEvent("prospect.sample_requested", a.actor, { prospect_id: p.id, playbook }, req.id);
 
   const warnings = await handoffSample(req.id, p, sig, a.actor);
-  const started = { ...cap, started_this_run: cap.started_this_run + 1, started_today: cap.started_today + 1, remaining: cap.remaining - 1 };
-  return { request_id: req.id, already_requested: false, cap: started, warnings };
+  return { request_id: req.id, already_requested: false, cap: withOneStarted(cap), warnings };
 }

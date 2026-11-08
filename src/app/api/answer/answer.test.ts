@@ -76,8 +76,28 @@ describe("POST /api/answer", () => {
 
     const status = await get(body.request_id);
     expect(status.status).toBe(200);
-    expect(await status.json()).toMatchObject({ request_id: body.request_id, status: "received", done: false, report: null });
+    expect(await status.json()).toMatchObject({ request_id: body.request_id, status: "received", done: false, quote: null, report: null });
     expect((await get(body.request_id, otherKey)).status).toBe(404);
+  });
+
+  it("shows the caller its quote once priced, so a price held for a founder isn't a silent stall", async () => {
+    const own = (await createApiKey("quote-reader", 4)).key; // its own key, so the rate-limit test below keeps its count
+    const res = await post({ question: "Did the dam overflow?", location: "Oroville, CA" }, own);
+    const { request_id } = await res.json();
+    await db.query(
+      `INSERT INTO quotes (id, request_id, price_usd, status, auto_approved, line_items, payment_link) VALUES
+       ('qte_api1', $1, 120, 'needs_approval', false, '[{"label":"Satellite data","amount_usd":80},{"label":"Analysis and verified report","amount_usd":40}]', null)`,
+      [request_id],
+    );
+    await db.query("UPDATE requests SET quote_id = 'qte_api1', status = 'awaiting_approval' WHERE id = $1", [request_id]);
+    const body = await (await get(request_id, own)).json();
+    expect(body).toMatchObject({ status: "awaiting_approval", done: false });
+    expect(body.quote).toEqual({
+      id: "qte_api1", price_usd: 120, status: "needs_approval", auto_approved: false, payment_link: null,
+      line_items: [{ label: "Satellite data", amount_usd: 80 }, { label: "Analysis and verified report", amount_usd: 40 }],
+    });
+    expect((await get("req_nosuch0001", own)).status).toBe(404);
+    expect((await get(request_id)).status).toBe(404); // another key never sees it
   });
 
   it("still answers 202 when the request started but tagging it failed, so the client doesn't retry into a duplicate", async () => {

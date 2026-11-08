@@ -2,7 +2,7 @@ import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest
 import type { Db } from "../db/client";
 import { seedTemplates, TEMPLATE_SEEDS } from "./template-library";
 import {
-  AI_DISCLOSURE, ensureCompliance, fillTemplate, HUMAN_REVIEW_NOTE, renderClarifyingQuestion, renderFollowup, renderOutreach,
+  AI_DISCLOSURE, ensureCompliance, fillTemplate, HUMAN_REVIEW_NOTE, MONITORING_OFFER, renderClarifyingQuestion, renderFollowup, renderOutreach,
   renderCustomerUpdate, renderQuote, renderRefusal, renderReportDelivery, renderSupplierQuoteRequest, TemplateError, type ReportForEmail,
 } from "./templates";
 import { memoryDb } from "./testing";
@@ -97,6 +97,13 @@ describe("customer and supplier emails", () => {
     }
     expect(e.text.indexOf("before.png")).toBeLessThan(e.text.indexOf("after.png"));
     expect(e.text).not.toContain("Opt out");
+  });
+
+  it("offers monitoring of the site in every delivery, unless it is already monitored", () => {
+    const e = renderReportDelivery({ question: "Did it flood?", report });
+    expect(e.text).toContain(MONITORING_OFFER);
+    expect(MONITORING_OFFER).toMatch(/Reply "monitor".*\$49 per site per month/);
+    expect(renderReportDelivery({ question: "Did it flood?", report, offerMonitoring: false }).text).not.toContain(MONITORING_OFFER);
   });
 
   it("omits the review note and price when not applicable", () => {

@@ -104,6 +104,21 @@ export function pcImageUrl(item: string, bbox: BBox, kind: "visual" | "ndvi" = "
 const DEMO = { demo: true } as const;
 type At = (minutesAgo: number) => string;
 
+/**
+ * "What it costs today" rows for the market panel. Not real quotes: the figures are placeholders and every row
+ * says so in its source title, so a demo screenshot can never pass them off as cited prices. In production the
+ * market researcher writes real, linked rows (save_market_prices).
+ */
+type MarketSeed = [Playbook, string, number | null, number | null, string, string | null];
+const MARKET: MarketSeed[] = [
+  ["disasters", "Drone roof inspection after a storm", 250, 600, "per site", "2–5 days"],
+  ["disasters", "Insurance adjuster site visit", 300, 900, "per site", "1–2 weeks"],
+  ["deforestation", "On-site EUDR due-diligence audit", 2000, 8000, "per supplier", "4–8 weeks"],
+  ["deforestation", "Commercial forest-monitoring subscription", 500, 1500, "per month", null],
+  ["mining", "Environmental site survey", 3000, 10000, "per site", "2–6 weeks"],
+  ["mining", "Drone stockpile survey", 800, 2500, "per survey", "about 1 week"],
+];
+
 /** [key, playbook, feed, title, severity, lat, lon, minutes ago, status, status reason] */
 type SignalSeed = [string, Playbook, string, string, string | null, number, number, number, "new" | "matched" | "ignored", string?];
 const SIGNALS: SignalSeed[] = [
@@ -823,6 +838,16 @@ export async function seedDemo(db: Db, opts: { now?: Date } = {}): Promise<DemoC
   await rev("r_mead", 29, "committed", "API customer, invoiced monthly", 1020);
   await rev("s_butte", 49, "committed", "monthly checks of three orchard blocks", 170);
   await rev("s_rondonia", 150, "stated_willingness", "said they would pay about $150 for a full parcel report", 715);
+
+  // What buyers pay today (placeholders, marked as such) -------------------------------------------------
+  for (const [i, [playbook, alternative, low, high, unit, turnaround]] of MARKET.entries()) {
+    await q(
+      `INSERT INTO market_prices (id, playbook, alternative, price_low, price_high, unit, turnaround, source_title, source_url, retrieved_at, notes)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) ON CONFLICT (playbook, alternative, source_url) DO NOTHING`,
+      [newId("marketPrice"), playbook, alternative, low, high, unit, turnaround, "Local demo row, not a real price",
+        `https://example.com/terragent-demo/market-${i + 1}`, at(1260).slice(0, 10), "demo: placeholder figures for local UI work"],
+    );
+  }
 
   // Coordinator's effort shifts over the day ------------------------------------------------------------
   const shifts = [

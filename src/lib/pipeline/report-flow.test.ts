@@ -117,7 +117,10 @@ describe("analysis and the Earth index", () => {
     expect(job.bundle_file_id).toBe("fil_bundle1");
     expect(job.job).toMatchObject({ request_id: req.id, recipe: "burn_severity", collection: "sentinel-2-l2a", h3_res: 8, max_cloud_pct: 30 });
     expect(job.job.after_scene).toMatchObject({ item_id: expect.stringMatching(/^S2C_/) });
-    expect(job.steps.join("\n")).toContain(`-m terragent_pipeline.run --job ~/job.json --out ~/out/${req.id}`);
+    // Analytics sessions share one computer: each run has its own job file, and runs take a lock.
+    expect(job.job_path).toBe(`~/jobs/${req.id}.json`);
+    expect(job.steps.join("\n")).toContain(`flock -w 480 ~/tg.lock ~/tg/pipeline/.venv/bin/python -m terragent_pipeline.run --job ~/jobs/${req.id}.json --out ~/out/${req.id}`);
+    expect(job.steps.join("\n")).not.toContain("~/job.json");
   });
 });
 

@@ -1,6 +1,6 @@
 import { CAPS } from "../../src/lib/config";
 import { VERIFIER_CHECKS } from "../../src/lib/domain";
-import { PIPELINE_FINISH, PIPELINE_RULES, PIPELINE_START, systemPrompt } from "./prompt";
+import { PIPELINE_RULES, PIPELINE_START, systemPrompt } from "./prompt";
 import { MEMBER, VISION } from "./tools";
 import type { AgentDefinition } from "./types";
 
@@ -34,17 +34,17 @@ export const verifier: AgentDefinition = {
       "view_image the report's images and compare them with the captions, dates and claims " +
         "(the tool's text lists only names and links; the pictures themselves are attached).",
       `Evaluate every check (pass/fail + a one-line note):\n${CHECKLIST}`,
-      "terragent.save_verdict: pass only if every check passes; score 0–100; required_fixes = concrete, actionable edits (quote the wrong text).",
-      "terragent.log_decision kind verification with the score and the deciding checks.",
-      "Pass: terragent.handoff to comms-customer to deliver, or to comms-outreach when the request is a free sample. " +
-        `Fail: terragent.handoff to interpreter with the required fixes. If it has already been revised ${CAPS.maxReportRevisions} times, ` +
-        "terragent.set_status failed with a note explaining what is still wrong.",
+      "terragent.save_verdict: pass only if every check passes; score 0–100; required_fixes = concrete, actionable edits (quote the wrong text). " +
+        "It logs the verification decision and hands off itself: a pass to comms-customer (delivery) or, for a free sample, comms-outreach; a fail back " +
+        `to interpreter with your fixes; after ${CAPS.maxReportRevisions} revisions it marks the request failed. Don't log_decision or handoff again.`,
+      "Only if the save_verdict result has handoff_error: terragent.handoff exactly as its `next` says (same to, stage and instructions).",
     ],
     rules: [
       "Judge only what is in the report, the analysis and the images. Do not rewrite the report yourself.",
       "A number in the report that is not in the analysis is a failure of claims_supported_by_measurements.",
       ...PIPELINE_RULES,
     ],
-    finish: PIPELINE_FINISH,
+    finish:
+      "End after terragent.save_verdict: it hands the request on (or marks it failed). Call terragent.handoff yourself only to retry a handoff_error it returned.",
   }),
 };

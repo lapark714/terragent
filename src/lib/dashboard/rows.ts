@@ -80,14 +80,24 @@ export async function dbRead<T>(fn: () => Promise<T>): Promise<T> {
   }
 }
 
+/**
+ * What a public panel or live read says when it fails. Never the exception text: the dashboard is public and
+ * unauthenticated, and driver errors can carry secrets (the Neon driver echoes a malformed DATABASE_URL,
+ * password included). The full error goes to the server log only.
+ */
+export const PUBLIC_UNAVAILABLE = "unavailable";
+
+/** Masks credentials in connection strings (`postgres://user:pw@host` → `postgres://***@host`) and bearer-style keys. */
+export { redactSecrets } from "../redact";
+
 /** Runs a panel query; a failure becomes `{ ok: false }` so the other panels still render. */
 export async function panel<T>(fn: () => Promise<T>): Promise<Panel<T>> {
   try {
     return { ok: true, data: await dbRead(fn) };
   } catch (e) {
-    if (e instanceof DbPausedError) return { ok: false, error: e.message, suspended: true };
+    if (e instanceof DbPausedError) return { ok: false, error: DB_PAUSED_MESSAGE, suspended: true };
     console.error("[dashboard] panel query failed:", e);
-    return { ok: false, error: e instanceof Error ? e.message : String(e) };
+    return { ok: false, error: PUBLIC_UNAVAILABLE };
   }
 }
 
@@ -105,11 +115,16 @@ export async function live<T>(key: string, ttlMs: number, fn: () => Promise<T>, 
   if (isOffline()) return { state: "offline" };
   if (!env(requiredEnv)) return { state: "not_configured" };
   const hit = cache.get(key);
-  if (!hit || hit.expires < Date.now()) cache.set(key, { expires: Date.now() + ttlMs, value: fn() });
+  if (!hit || hit.expires < Date.now()) {
+    const value = fn();
+    // Logged once per call to the service (not per viewer); the public result only says it is unavailable.
+    value.catch((e: unknown) => console.error(`[dashboard] ${key} failed:`, e));
+    cache.set(key, { expires: Date.now() + ttlMs, value });
+  }
   try {
     return { state: "ok", data: (await cache.get(key)!.value) as T };
-  } catch (e) {
-    return { state: "error", message: e instanceof Error ? e.message : String(e) };
+  } catch {
+    return { state: "error", message: PUBLIC_UNAVAILABLE };
   }
 }
 

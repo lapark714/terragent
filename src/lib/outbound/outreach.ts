@@ -3,16 +3,23 @@
  * Gates enforced here, on top of sendEmail's own (armed inbox, suppression, approved template, postal address):
  * verified sample report, approved template for the playbook, channel rules, one first touch per business,
  * follow-ups only with new information, CAPS.outreachTouchesPerDay across all channels.
+ *
+ * The touch tools also finish the request comms-outreach was handed (the free sample, or a monitor follow-up): a
+ * touch that went out → delivered, an outcome that can never change (final form skip, do-not-contact gate) →
+ * cancelled. That closes its board card, so a finished sample is not parked "blocked" and re-woken by the coordinator.
+ * A blocked email or a form error leaves it open on purpose: the coordinator retries those once.
  */
 import { createHash } from "node:crypto";
 import { inboxAddress } from "../agentmail/config";
 import { CAPS, PRICING } from "../config";
 import { getDb } from "../db/client";
+import { TERMINAL_STATUSES } from "../domain";
 import { isSuppressed, optOutUrl } from "../email/optout";
 import { replyInThread, sendEmail, type SendEmailArgs } from "../email/send";
 import { AI_DISCLOSURE, renderFollowup, renderOutreach, TemplateError, type RenderedEmail, type ReportForEmail } from "../email/templates";
 import { logEvent } from "../events";
 import { newId } from "../ids";
+import { setStatus } from "../pipeline/requests";
 import { chooseChannel, type OutreachChannel } from "./channel";
 import { fail } from "./errors";
 import { lastTouchAt, newInfoSince } from "./followups";
@@ -36,6 +43,12 @@ const CONTACT_FORM_RULES = [
   "Paste rendered.text (you may shorten it to fit the form, keeping the finding, report link, price, AI disclosure and opt-out).",
   "Right after submitting, call record_contact_form_touch with the exact text you sent.",
 ];
+
+/** What finishes the request, returned with the context so the agent knows the run ends with the touch tool. */
+const ON_FINISH =
+  "send_outreach_email or record_contact_form_touch closes this request: sent → delivered, a final skip → cancelled. " +
+  "A blocked email or skip_reason form_error leaves it open for one retry. If you decide not to contact them, " +
+  "log_decision kind outreach, then set_status cancelled with the reason (if set_status refuses, add_note the reason instead).";
 
 /** The next step each playbook's first touch offers (spec §2 playbooks). */
 const PRICE_BY_PLAYBOOK: Record<OutboundPlaybook, string> = {
@@ -107,19 +120,26 @@ interface OutreachContext {
   signal: { title: string; event_time: string | null } | null;
 }
 
-async function loadContext(prospectId: string, kind: "outreach" | "followup", agentVars: Record<string, string> = {}): Promise<OutreachContext> {
+async function loadContext(
+  prospectId: string,
+  kind: "outreach" | "followup",
+  agentVars: Record<string, string> = {},
+  actor = "system",
+): Promise<OutreachContext> {
   const p = await getProspect(prospectId);
   if (!p) fail(`prospect ${prospectId} not found`);
-  if (CLOSED_STATUSES.includes(p.status)) fail(`prospect is ${p.status}: do not contact`);
-  if (REPLIED_STATUSES.includes(p.status)) fail(`prospect has ${p.status}: comms-customer owns the conversation on hello@`);
-  if (p.contact_email && (await isSuppressed(p.contact_email))) fail("contact has opted out: do not contact");
+  // Gates that can never pass for this prospect also finish the request comms-outreach holds for it.
+  const stop = (status: Finish, reason: string) => refuseFinal(p, kind, status, reason, actor);
+  if (CLOSED_STATUSES.includes(p.status)) return stop("cancelled", `prospect is ${p.status}: do not contact`);
+  if (REPLIED_STATUSES.includes(p.status)) return stop("cancelled", `prospect has ${p.status}: comms-customer owns the conversation on hello@`);
+  if (p.contact_email && (await isSuppressed(p.contact_email))) return stop("cancelled", "contact has opted out: do not contact");
   // One touch per business across playbooks: its other prospect rows count too.
   const siblings = await sameBusiness(p);
   const closed = siblings.find((o) => CLOSED_STATUSES.includes(o.status) || REPLIED_STATUSES.includes(o.status));
-  if (closed) fail(`this business is ${closed.status} as prospect ${closed.id} (${closed.playbook}): no outreach from ${p.playbook}`);
+  if (closed) return stop("cancelled", `this business is ${closed.status} as prospect ${closed.id} (${closed.playbook}): no outreach from ${p.playbook}`);
   const touched = siblings.find((o) => o.first_touch_at);
   if (kind === "outreach" && touched) {
-    fail(`this business was already contacted as prospect ${touched.id} (${touched.playbook}) on ${iso(touched.first_touch_at)?.slice(0, 10)}: one touch per business`);
+    return stop("cancelled", `this business was already contacted as prospect ${touched.id} (${touched.playbook}) on ${iso(touched.first_touch_at)?.slice(0, 10)}: one touch per business`);
   }
   if (!p.sample_request_id) fail("no free sample yet: the sourcing agent must request_free_sample first");
 
@@ -133,9 +153,10 @@ async function loadContext(prospectId: string, kind: "outreach" | "followup", ag
   const history = await touchHistory(p.id);
   const first = history.find((t) => t.kind === "outreach" && t.status === "sent");
   if (kind === "outreach" && first) {
-    fail(`already contacted on ${iso(first.created_at)?.slice(0, 10)} via ${first.channel}; follow-ups only with new information (list_followups)`);
+    // The first touch went out earlier (e.g. this is a re-handed run): the sample is delivered.
+    return stop("delivered", `already contacted on ${iso(first.created_at)?.slice(0, 10)} via ${first.channel}; follow-ups only with new information (list_followups)`);
   }
-  if (kind === "followup" && !first) fail("no first touch yet: a follow-up needs an earlier touch");
+  if (kind === "followup" && !first) return stop("cancelled", "no first touch yet: a follow-up needs an earlier touch");
 
   const sent = await touchesToday();
   if (sent >= CAPS.outreachTouchesPerDay) fail(`daily outreach cap reached (${sent}/${CAPS.outreachTouchesPerDay}); continue tomorrow`);
@@ -186,8 +207,8 @@ function findForm(p: ProspectRow): string {
 
 const placeholders = (s: string) => [...new Set([...s.matchAll(/\{\{\s*(\w+)\s*(?:\|[^}]*)?\}\}/g)].map((m) => m[1]))];
 
-export async function getOutreachContext(a: { prospectId: string; vars?: Record<string, string> }) {
-  const c = await loadContext(a.prospectId, "outreach", a.vars);
+export async function getOutreachContext(a: { prospectId: string; vars?: Record<string, string>; actor?: string }) {
+  const c = await loadContext(a.prospectId, "outreach", a.vars, a.actor);
   const p = c.prospect;
   const rendered = render(c);
   return {
@@ -220,19 +241,25 @@ export async function getOutreachContext(a: { prospectId: string; vars?: Record<
     ai_disclosure: AI_DISCLOSURE,
     rules: MESSAGE_RULES,
     touches_left_today: c.touchesLeft,
+    on_finish: ON_FINISH,
   };
 }
 
 export async function sendOutreachEmail(a: { prospectId: string; kind: "outreach" | "followup"; vars?: Record<string, string>; newInfo?: string; actor: string }) {
-  const c = await loadContext(a.prospectId, a.kind, a.vars);
+  const c = await loadContext(a.prospectId, a.kind, a.vars, a.actor);
   const p = c.prospect;
   if (c.channel === "contact_form" || !p.contact_email) {
-    fail(`channel is contact_form (${c.channelReason}): submit their website form with the browser, then record_contact_form_touch`);
+    // A first touch goes through their form instead; a follow-up never does (contact forms get one touch).
+    const reason = `channel is contact_form (${c.channelReason})`;
+    if (a.kind === "followup") return refuseFinal(p, "followup", "cancelled", `${reason}: contact-form prospects get one touch only, no follow-ups`, a.actor);
+    fail(`${reason}: submit their website form with the browser, then record_contact_form_touch`);
   }
   if (a.kind === "followup") {
     if (!a.newInfo) fail("a follow-up must carry new_info: the new image or change being reported");
     const last = await lastTouchAt(p.id);
-    if (!last || !(await newInfoSince(p, last)).length) fail("no new information since the last touch: never send plain reminders");
+    if (!last || !(await newInfoSince(p, last)).length) {
+      return refuseFinal(p, "followup", "cancelled", "no new information since the last touch: never send plain reminders", a.actor);
+    }
   }
   const rendered = render(c, a.kind === "followup" ? a.newInfo : undefined);
 
@@ -267,6 +294,10 @@ export async function sendOutreachEmail(a: { prospectId: string; kind: "outreach
   }
   await logEvent(res.status === "sent" ? "outreach.sent" : "outreach.blocked", a.actor,
     { prospect_id: p.id, kind: a.kind, channel: c.channel, message_id: res.message_id, reason: res.blocked_reason ?? null }, p.sample_request_id);
+  // Sent: the request is done. Blocked: nothing went out, so it stays open for the coordinator's one retry.
+  const closed = res.status === "sent"
+    ? await finishHeld(p, a.kind, "delivered", `${a.kind === "outreach" ? "First touch" : "Follow-up"} sent by ${c.channel.replace("_", " ")} (message ${res.message_id}).`, a.actor)
+    : [];
   return {
     status: res.status,
     message_id: res.message_id,
@@ -274,11 +305,14 @@ export async function sendOutreachEmail(a: { prospectId: string; kind: "outreach
     blocked_reason: res.blocked_reason ?? null,
     channel: c.channel,
     touches_left_today: res.status === "sent" ? c.touchesLeft - 1 : c.touchesLeft,
+    closed,
   };
 }
 
 export const SKIP_REASONS = ["captcha", "no_solicitation_notice", "no_form_found", "form_error", "other"] as const;
 export type SkipReason = (typeof SKIP_REASONS)[number];
+/** A form that broke (form_error) may work on a retry; every other skip is the site saying no, so it is final. */
+const RETRYABLE_SKIPS: readonly SkipReason[] = ["form_error"];
 
 /** Records a contact-form touch that already happened (or was skipped). Facts are always recorded; rule breaks come back as warnings. */
 export async function recordContactFormTouch(a: {
@@ -310,7 +344,15 @@ export async function recordContactFormTouch(a: {
     [id, p.sample_request_id, p.id, a.formUrl, a.messageText ?? a.note ?? null, template?.id ?? null, a.status,
       a.status === "skipped" ? [a.skipReason, a.note].filter(Boolean).join(": ") : null, `contact_form:${p.id}:${fingerprint}`],
   );
-  if (!inserted.length) return { message_id: null, duplicate: true, status: a.status, warnings };
+  // A form touch is always a first touch: sent → the sample is delivered; a final skip → it never will be.
+  const finish = async () => {
+    if (a.status === "sent") return finishHeld(p, "outreach", "delivered", `First touch sent through the contact form at ${a.formUrl}.`, a.actor);
+    if (RETRYABLE_SKIPS.includes(a.skipReason!)) return [];
+    const why = [a.skipReason, a.note].filter(Boolean).join(": ");
+    return finishHeld(p, "outreach", "cancelled", `Not contacted: contact form skipped (${why}).`, a.actor);
+  };
+  // An identical retry still finishes the request, in case the first call stopped before it did.
+  if (!inserted.length) return { message_id: null, duplicate: true, status: a.status, warnings, closed: await finish() };
 
   let disqualified: string[] = [];
   if (a.status === "sent") {
@@ -336,7 +378,8 @@ export async function recordContactFormTouch(a: {
     { prospect_id: p.id, status: a.status, skip_reason: a.skipReason ?? null, url: a.formUrl, rule_break: warnings.length > 0, warnings, disqualified },
     p.sample_request_id,
   );
-  return { message_id: id, duplicate: false, status: a.status, warnings, ...(disqualified.length ? { disqualified } : {}) };
+  const closed = await finish();
+  return { message_id: id, duplicate: false, status: a.status, warnings, ...(disqualified.length ? { disqualified } : {}), closed };
 }
 
 /** A form touch is recorded after the fact, so the gates that get_outreach_context enforces come back as warnings. */
@@ -355,4 +398,58 @@ async function formTouchRuleBreaks(p: ProspectRow, template: TemplateRow | null)
   if (!template) out.push("no approved template for this playbook: touches must use an approved template");
   if ((await touchesToday()) >= CAPS.outreachTouchesPerDay) out.push("daily outreach cap exceeded");
   return out;
+}
+
+// ---------------------------------------------------------------------------
+// Finishing the request comms-outreach was handed
+// ---------------------------------------------------------------------------
+
+type Finish = "delivered" | "cancelled";
+export interface ClosedRequest { request_id: string; status: Finish }
+
+/**
+ * Open requests comms-outreach holds for this prospect: the free sample (first touch) or its monitor follow-ups
+ * (follow-up). Only ones handed to comms-outreach, so a touch recorded while the verifier still has the sample
+ * (a rule break, flagged as a warning) does not cut the review short.
+ */
+async function heldRequests(p: ProspectRow, kind: "outreach" | "followup"): Promise<string[]> {
+  const db = await getDb();
+  const finished = [...TERMINAL_STATUSES];
+  if (kind === "outreach") {
+    if (!p.sample_request_id) return [];
+    const rows = await db.query<{ id: string }>(
+      "SELECT id FROM requests WHERE id = $1 AND owner_agent = 'comms-outreach' AND NOT (status = ANY($2))",
+      [p.sample_request_id, finished],
+    );
+    return rows.map((r) => r.id);
+  }
+  const rows = await db.query<{ id: string }>(
+    `SELECT id FROM requests WHERE prospect_id = $1 AND source = 'monitor' AND owner_agent = 'comms-outreach'
+       AND NOT (status = ANY($2)) ORDER BY created_at`,
+    [p.id, finished],
+  );
+  return rows.map((r) => r.id);
+}
+
+/**
+ * Moves those requests to a finished status (setStatus also closes the board card). Never throws: the touch is
+ * already recorded, and a request someone else finished in the meantime is not an error for the agent.
+ */
+async function finishHeld(p: ProspectRow, kind: "outreach" | "followup", status: Finish, note: string, actor: string): Promise<ClosedRequest[]> {
+  const closed: ClosedRequest[] = [];
+  for (const id of await heldRequests(p, kind)) {
+    try {
+      await setStatus(id, status, actor, note.slice(0, 1000));
+      closed.push({ request_id: id, status });
+    } catch (e) {
+      await logEvent("outreach.finish_failed", actor, { prospect_id: p.id, status, error: e instanceof Error ? e.message : String(e) }, id);
+    }
+  }
+  return closed;
+}
+
+/** A gate that can never pass for this prospect: finish what comms-outreach holds for it, then refuse with the reason. */
+async function refuseFinal(p: ProspectRow, kind: "outreach" | "followup", status: Finish, reason: string, actor: string): Promise<never> {
+  const closed = await finishHeld(p, kind, status, reason, actor);
+  fail(closed.length ? `${reason} (request ${closed.map((c) => c.request_id).join(", ")} closed as ${status}; nothing more to do for it)` : reason);
 }

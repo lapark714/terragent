@@ -6,6 +6,7 @@
  * outside that set fails in the SDK as "Tool … not found"; runTool() re-checks the allowlist anyway, so the
  * same rules hold for in-process callers (simulator, tests).
  */
+import { redactSecrets } from "../redact";
 import { createHash, randomBytes } from "node:crypto";
 import type { AuthInfo, CallToolResult, McpServer } from "@modelcontextprotocol/server";
 import { createMcpHandler, withMcpAuth } from "mcp-handler";
@@ -66,7 +67,8 @@ export async function runTool(name: string, args: unknown, ctx: ToolContext): Pr
       try {
         result = (await reg.handler(parsed.data, ctx)) ?? { ok: true };
       } catch (e) {
-        result = { error: e instanceof Error ? e.message : String(e) };
+        // Agents read this text: never let a connection string or key leak through an exception message.
+        result = { error: redactSecrets(e instanceof Error ? e.message : String(e)) };
       }
     }
   }

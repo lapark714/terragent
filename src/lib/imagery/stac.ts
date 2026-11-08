@@ -1,9 +1,10 @@
 /**
  * OWNER: imagery builder. Free scene search on Microsoft Planetary Computer (TypeScript, no Python).
  *
- * STAC search (anonymous POST) → one item per date and tile, footprints that cover the AOI first → AOI clear
- * fraction and haze check for the newest few from the data API (TiTiler) statistics on SCL + B02 (and, when none
- * of them is clear enough, the least cloudy few of the older ones, inside a time budget) → best before/after. Verified endpoints and traps: docs/platform/imagery.md §3.1, §3.8, §3.14. The Python
+ * STAC search (anonymous POST, sorted towards the preferred end of the window) → one item per date and tile,
+ * footprints that cover the AOI first → AOI clear fraction and haze check for the first few in preference order
+ * (newest, or oldest for floods) from the data API (TiTiler) statistics on SCL + B02 (and, when none
+ * of them is clear enough, the least cloudy few of the rest, inside a time budget) → best before/after. Verified endpoints and traps: docs/platform/imagery.md §3.1, §3.8, §3.14. The Python
  * pipeline (pipeline/terragent_pipeline/scenes.py) applies the same rules at full resolution.
  */
 import type { BBox, DateRange, SceneRef } from "../domain";
@@ -203,12 +204,18 @@ export function previewUrl(
 // Network
 // ---------------------------------------------------------------------------
 
+/**
+ * One page (50 items) of the window, sorted towards the end we prefer: newest first by default, oldest first for
+ * "earliest". The page is all we read, so with a long window and the wrong direction the first scenes after the
+ * event would never be seen (a flood window from the event date to today easily holds hundreds of items).
+ */
 async function stacSearch(
   collection: string,
   bbox: BBox,
   window: DateRange,
   maxCloudPct: number,
   tile: string | null,
+  direction: "asc" | "desc" = "desc",
 ): Promise<StacItem[]> {
   const query: Record<string, unknown> = { "eo:cloud_cover": { lte: Math.max(TILE_CLOUD_CAP, maxCloudPct) } };
   if (collection === "landsat-c2-l2") query.platform = { in: ["landsat-8", "landsat-9"] };
@@ -222,7 +229,7 @@ async function stacSearch(
       intersects: { type: "Polygon", coordinates: [[[x0, y0], [x1, y0], [x1, y1], [x0, y1], [x0, y0]]] },
       datetime: stacInterval(window),
       query,
-      sortby: [{ field: "datetime", direction: "desc" }],
+      sortby: [{ field: "datetime", direction }],
       limit: 50,
     }),
     signal: AbortSignal.timeout(SEARCH_TIMEOUT_MS),
@@ -316,12 +323,13 @@ function describe(label: string, pick: SceneCandidate | null, cands: SceneCandid
 export async function searchFreeScenes(q: FreeSceneQuery): Promise<FreeSceneResult> {
   const collection = q.collection ?? "sentinel-2-l2a";
   const need = minClear(q.maxCloudPct);
+  const earliest = q.afterPreference === "earliest";
   const [afterItems, beforeItems] = await Promise.all([
-    stacSearch(collection, q.bbox, q.after, q.maxCloudPct, null),
+    stacSearch(collection, q.bbox, q.after, q.maxCloudPct, null, earliest ? "asc" : "desc"),
     q.before ? stacSearch(collection, q.bbox, q.before, q.maxCloudPct, null) : Promise.resolve([]),
   ]);
   const afterCands = toCandidates(afterItems, collection, q.bbox);
-  if (q.afterPreference === "earliest") afterCands.reverse();
+  if (earliest) afterCands.reverse(); // toCandidates sorts newest first; the page above holds the oldest items
   let beforeCands = toCandidates(beforeItems, collection, q.bbox);
   // Same MGRS tile before and after = same pixel grid, so change maps line up without resampling.
   const tile = afterCands[0]?.mgrs_tile;

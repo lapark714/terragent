@@ -10,6 +10,7 @@ import type { DataSpec } from "../domain";
 import { logDecision, logEvent, logIntervention } from "../events";
 import { polygonBbox } from "../geo/h3";
 import { newId } from "../ids";
+import { upsertCard } from "../naive/board";
 import { errorMessage, json, num, query, queryOne, round2 } from "./db";
 import { getProvider, isEmail, providerView, type ProviderRow } from "./providers";
 import { isTerminal, requireRequest, setStatus, type RequestRow } from "./requests";
@@ -237,7 +238,26 @@ export async function sendSupplierEmail(a: { orderId: string; text: string; subj
     if (sent.thread_id) await query("UPDATE orders SET quote_thread_id = $2, updated_at = now() WHERE id = $1", [order.id, sent.thread_id]);
   }
   await logEvent("supplier_email.sent", actor, { order_id: order.id, status: sent.status, blocked_reason: sent.blocked_reason }, order.request_id);
+  if (sent.status === "sent") await closeSupplierCard(order, `Follow-up sent to ${provider.name}; waiting for their answer.`);
   return { status: sent.status, thread_id: sent.thread_id ?? order.quote_thread_id, blocked_reason: sent.blocked_reason ?? null };
+}
+
+interface SupplierCard { key: string; title: string; body: string }
+
+/**
+ * A supplier reply opens a keyed board card for comms-suppliers (email/inbound.ts, ref kept in orders.meta.card).
+ * comms-suppliers can't write the board and its handoff closes the request's card, not this one, so the tools that
+ * finish the reply close it here; otherwise the board parks it blocked and pings the coordinator. Cosmetic: a board
+ * failure never fails the tool.
+ */
+async function closeSupplierCard(order: OrderRow, note: string): Promise<void> {
+  const card = order.meta?.card as SupplierCard | undefined;
+  if (!card?.key) return;
+  try {
+    await upsertCard({ key: card.key, title: card.title, body: card.body, assignee: "comms-suppliers", status: "done", note: note.slice(0, 2000) });
+  } catch (e) {
+    await logEvent("board.sync_failed", "system", { order_id: order.id, error: errorMessage(e) }, order.request_id);
+  }
 }
 
 export async function recordSupplierQuote(
@@ -251,5 +271,14 @@ export async function recordSupplierQuote(
     [order.id, a.currency.toUpperCase() === "USD" ? a.quotedAmount : null, json({ supplier_quote: quote })],
   );
   await logEvent("supplier_quote.recorded", actor, { order_id: order.id, amount: a.quotedAmount, currency: a.currency }, order.request_id);
-  return { order_id: order.id, supplier_quote: quote };
+  await closeSupplierCard(order, `Quote recorded: ${a.quotedAmount} ${a.currency.toUpperCase()}${a.deliveryTime ? `, delivery ${a.deliveryTime}` : ""}.`);
+  // The request usually moved on with free data while the supplier answered; a finished one can't be handed off.
+  const req = await requireRequest(order.request_id);
+  const open = !isTerminal(req);
+  return {
+    order_id: order.id, supplier_quote: quote, request_id: req.id, request_status: req.status,
+    next: open
+      ? "terragent.handoff to acquisition (stage acquisition) with the quoted numbers."
+      : `Request ${req.id} is ${req.status}, so it can't be handed off: terragent.add_note on it with the quote and end your turn.`,
+  };
 }

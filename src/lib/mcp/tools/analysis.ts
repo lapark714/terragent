@@ -5,7 +5,16 @@ import { getAnalysisJob, getAnalysisView, saveAnalysis } from "../../pipeline/an
 import type { ToolRegistrar } from "../types";
 
 export function register(r: ToolRegistrar): void {
-  r.tool("get_analysis_job", { request_id: z.string() }, async ({ request_id }) => getAnalysisJob(request_id));
+  r.tool(
+    "get_analysis_job",
+    {
+      request_id: z.string(),
+      monitor_id: z.string().optional().describe(
+        "monitor re-check (from list_due_monitors): keeps the baseline, searches a new after scene since the monitor's last one; works on delivered requests",
+      ),
+    },
+    async ({ request_id, monitor_id }) => getAnalysisJob(request_id, { monitorId: monitor_id }),
+  );
 
   r.tool(
     "save_analysis",

@@ -112,8 +112,11 @@ describe("previewUrl", () => {
 describe("searchFreeScenes", () => {
   afterEach(() => vi.unstubAllGlobals());
 
-  /** Fake Planetary Computer: STAC features per window start, statistics per item id (null = HTTP 500). */
-  function stubPc(features: Record<string, unknown[]>, stats: Record<string, [number, number] | null>, onStats?: (id: string) => void) {
+  /**
+   * Fake Planetary Computer: STAC features per window start, statistics per item id (null = HTTP 500). Like the real
+   * API, search returns one page: the window's items sorted by the requested direction, cut to `limit`.
+   */
+  function stubPc(features: Record<string, ReturnType<typeof item>[]>, stats: Record<string, [number, number] | null>, onStats?: (id: string) => void) {
     const calls: { url: string; body: Record<string, unknown> }[] = [];
     vi.stubGlobal(
       "fetch",
@@ -123,7 +126,11 @@ describe("searchFreeScenes", () => {
         calls.push({ url, body });
         if (url.endsWith("/search")) {
           const start = String(body.datetime).slice(0, 10);
-          return Response.json({ type: "FeatureCollection", features: features[start] ?? [] });
+          const asc = body.sortby?.[0]?.direction === "asc";
+          const page = [...(features[start] ?? [])]
+            .sort((a, b) => (asc ? 1 : -1) * a.properties.datetime.localeCompare(b.properties.datetime))
+            .slice(0, body.limit);
+          return Response.json({ type: "FeatureCollection", features: page });
         }
         const id = new URL(url).searchParams.get("item")!;
         onStats?.(id);
@@ -177,6 +184,24 @@ describe("searchFreeScenes", () => {
     const r = await searchFreeScenes({ ...query, before: null, afterPreference: "earliest" });
     expect(r.after?.item_id).toBe("mid");
     expect(r.candidates.after.map((c) => c.item_id)).toEqual(["early", "mid", "late"]);
+  });
+
+  it("asks STAC for the oldest page first when the after window prefers the earliest scene", async () => {
+    // Event date to today: 60 passes, more than one page of 50. Only the first two after the event are clear.
+    const days = Array.from({ length: 60 }, (_, i) => new Date(Date.UTC(2023, 3, 21) + i * 5 * 86_400_000).toISOString().slice(0, 10));
+    const features = { [days[0]]: days.map((d) => item(`S2_${d}`, `${d}T18:00:00Z`)) };
+    const stats = Object.fromEntries(days.map((d, i) => [`S2_${d}`, [i < 2 ? 1 : 0.2, 2000] as [number, number]]));
+    const window = { start: days[0], end: days[59] };
+    const calls = stubPc(features, stats);
+    const r = await searchFreeScenes({ ...query, after: window, before: { start: "2022-04-01", end: "2022-05-01" }, afterPreference: "earliest" });
+    expect(r.after?.item_id).toBe(`S2_${days[0]}`);
+    const sorts = calls.filter((c) => c.url.endsWith("/search")).map((c) => [String(c.body.datetime).slice(0, 10), c.body.sortby]);
+    expect(sorts).toEqual([
+      [days[0], [{ field: "datetime", direction: "asc" }]],
+      ["2022-04-01", [{ field: "datetime", direction: "desc" }]], // the before window still wants the newest
+    ]);
+    // Newest first (the default) would only see the last 50 passes, all cloudy.
+    expect((await searchFreeScenes({ ...query, after: window, before: null })).after?.item_id).not.toBe(`S2_${days[0]}`);
   });
 
   const statsIds = (calls: { url: string }[]) => calls.filter((c) => c.url.includes("/statistics")).map((c) => new URL(c.url).searchParams.get("item"));

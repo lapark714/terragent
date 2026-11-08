@@ -1,7 +1,10 @@
-/** Status of an API request; once delivered, the answer summary and the report link. Only the creating key may read it. */
+/**
+ * Status of an API request: its quote once priced (so a caller sees the price, and when a founder or their email has
+ * to clear it), and once delivered the answer summary and the report link. Only the creating key may read it.
+ */
 import { json } from "@/app/_lib/http";
 import { apiKeyFromRequest, hitRateLimit, rateLimitHeaders, verifyApiKey } from "@/lib/api-keys";
-import { getRequestProgress, requestApiKeyId } from "@/lib/dashboard/public";
+import { getApiRequest, getRequestProgress } from "@/lib/dashboard/public";
 
 /** Polling is cheap but not free: allow far more reads than writes per key. */
 const POLLS_PER_REQUEST = 20;
@@ -14,8 +17,9 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
   if (!limit.allowed) return json({ error: "rate_limited", retry_after_s: limit.resetSeconds }, 429, headers);
 
   const { id } = await params;
-  const progress = (await requestApiKeyId(id)) === key.id ? await getRequestProgress(id) : null;
-  if (!progress) return json({ error: "not_found" }, 404, headers);
+  const api = await getApiRequest(id);
+  const progress = api && api.keyId === key.id ? await getRequestProgress(id) : null;
+  if (!api || !progress) return json({ error: "not_found" }, 404, headers);
   return json(
     {
       request_id: progress.id,
@@ -24,6 +28,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
       created_at: progress.createdAt,
       updated_at: progress.updatedAt,
       refusal_reason: progress.refusalReason,
+      quote: api.quote,
       report: progress.report && {
         url: progress.report.url,
         title: progress.report.title,

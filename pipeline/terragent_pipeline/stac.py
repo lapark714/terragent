@@ -56,13 +56,16 @@ def bbox_polygon(bbox: BBox) -> dict:
     return {"type": "Polygon", "coordinates": [[[x0, y0], [x1, y0], [x1, y1], [x0, y1], [x0, y0]]]}
 
 
-def search(collection: str, bbox: BBox, window: Window, query: dict | None = None, limit: int = 50) -> list[dict]:
-    """Items intersecting the AOI in the window, newest first. One page only (`limit` is the page size)."""
+def search(
+    collection: str, bbox: BBox, window: Window, query: dict | None = None, limit: int = 50, oldest_first: bool = False
+) -> list[dict]:
+    """Items intersecting the AOI in the window, newest first (oldest first with `oldest_first`). One page only
+    (`limit` is the page size), so the sort decides which end of a long window is seen at all."""
     body: dict = {
         "collections": [collection],
         "intersects": bbox_polygon(bbox),
         "datetime": window.stac(),
-        "sortby": [{"field": "datetime", "direction": "desc"}],
+        "sortby": [{"field": "datetime", "direction": "asc" if oldest_first else "desc"}],
         "limit": limit,
     }
     if query:

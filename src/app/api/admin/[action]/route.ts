@@ -1,11 +1,13 @@
 /**
- * Founder actions: naive-approval | order | quote | template | inbox. Header x-admin-token must equal ADMIN_TOKEN.
- * Body carries the target, the decision, `actor` (who) and `reason` — every action is logged as an intervention.
+ * Founder actions: naive-approval | order | quote | template | inbox | payment. Header x-admin-token must equal
+ * ADMIN_TOKEN. Body carries the target, the decision, `actor` (who) and `reason` — every action is logged as an
+ * intervention.
  */
 import { issues } from "@/app/_lib/intake";
 import { json, readBody } from "@/app/_lib/http";
 import { clientIp, hitRateLimit } from "@/lib/api-keys";
 import { AdminAction, AdminConflict, checkAdminToken, runAdminAction } from "@/lib/dashboard/admin";
+import { redactSecrets } from "@/lib/dashboard/rows";
 
 export async function POST(req: Request, { params }: { params: Promise<{ action: string }> }) {
   const limit = await hitRateLimit(`admin:${clientIp(req)}`, 120);
@@ -22,6 +24,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ action:
   } catch (e) {
     if (e instanceof AdminConflict) return json({ error: "conflict", message: e.message }, 409);
     console.error("[admin] action failed:", e);
-    return json({ error: "failed", message: e instanceof Error ? e.message : "Action failed" }, 502);
+    // Founders only, but shown on a screen people film: no connection strings or keys, whatever the driver said.
+    return json({ error: "failed", message: e instanceof Error ? redactSecrets(e.message).slice(0, 300) : "Action failed" }, 502);
   }
 }

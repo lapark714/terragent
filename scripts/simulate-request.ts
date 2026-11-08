@@ -78,8 +78,11 @@ function templateDraft(requestId: string, r: AnalysisView): ReportDraft {
   };
 }
 
+/** Closed in the finally below: PGlite keeps a 10 s internal timer alive, which would hold the process open after the run. */
+const opened: { db: Awaited<ReturnType<typeof setupMemoryDb>> | null } = { db: null };
+
 async function main() {
-  const db = await setupMemoryDb();
+  const db = (opened.db = await setupMemoryDb());
   log(`memory database ready (${offline ? "offline fixtures" : "live imagery calls"})`);
 
   const req = await startInboundRequest({
@@ -168,4 +171,6 @@ try {
   if (!(e instanceof Stop)) throw e;
   console.error(`\nStopped: ${e.message}`);
   process.exitCode = 2;
+} finally {
+  await opened.db?.close();
 }

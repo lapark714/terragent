@@ -65,4 +65,18 @@ describe("POST /api/admin/[action]", () => {
     expect((await res.json()).error).toBe("conflict");
     expect(await interventions()).toBe(1);
   });
+
+  it("records a payment from the Money panel, once", async () => {
+    await db.query("INSERT INTO requests (id, source, question, price_usd) VALUES ('req_routepay01', 'portal', 'Did it flood?', 29)");
+    const body = { request_id: "req_routepay01", amount_usd: 29, actor: "Aiden", reason: "Paid through the Stripe link" };
+    const before = await interventions();
+    expect((await post("payment", { ...body, amount_usd: "29" }, "s3cret-token")).status).toBe(400);
+    const res = await post("payment", body, "s3cret-token");
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ done: "Recorded a $29 payment for req_rout." });
+    const again = await post("payment", body, "s3cret-token");
+    expect(again.status).toBe(409);
+    expect(await interventions()).toBe(before + 1);
+    expect(await db.query("SELECT amount_usd::float8 AS usd, kind FROM revenue WHERE request_id = 'req_routepay01'")).toEqual([{ usd: 29, kind: "paid" }]);
+  });
 });

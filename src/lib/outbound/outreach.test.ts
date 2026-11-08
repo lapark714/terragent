@@ -4,7 +4,7 @@ import type { Db } from "../db/client";
 import { chooseChannel, isPersonalMailbox, normalizeDomain } from "./channel";
 import { listFollowups } from "./followups";
 import { getOutreachContext, recordContactFormTouch, sendOutreachEmail } from "./outreach";
-import { freshDb, insert, reset, seedProspect, seedReadyProspect, seedTemplate } from "./testing";
+import { freshDb, insert, reset, seedProspect, seedReadyProspect, seedRequest, seedTemplate } from "./testing";
 
 const mocks = vi.hoisted(() => {
   class TemplateError extends Error {}
@@ -20,12 +20,19 @@ const mocks = vi.hoisted(() => {
     sendEmail: vi.fn(),
     replyInThread: vi.fn(),
     isSuppressed: vi.fn(),
+    upsertCard: vi.fn(),
   };
 });
 vi.mock("../email/send", () => ({ sendEmail: mocks.sendEmail, replyInThread: mocks.replyInThread }));
 vi.mock("../email/optout", () => ({ isSuppressed: mocks.isSuppressed, optOutUrl: async () => "https://terragent.test/unsubscribe?t=tok" }));
 vi.mock("../pipeline/reports", () => ({ reportUrl: (t: string) => `https://terragent.test/r/${t}` }));
-vi.mock("../pipeline/requests", () => ({ createRequest: vi.fn(), handoff: vi.fn() }));
+// The real setStatus (it finishes requests and closes their board card); the board itself is faked.
+vi.mock("../pipeline/requests", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../pipeline/requests")>()),
+  createRequest: vi.fn(),
+  handoff: vi.fn(),
+}));
+vi.mock("../naive/board", () => ({ upsertCard: mocks.upsertCard }));
 vi.mock("../email/templates", () => ({
   AI_DISCLOSURE: "Written by an AI agent.",
   TemplateError: mocks.TemplateError,
@@ -56,6 +63,7 @@ beforeEach(async () => {
   };
   mocks.sendEmail.mockImplementation(record);
   mocks.replyInThread.mockImplementation(record);
+  mocks.upsertCard.mockImplementation(async (c: { key: string; status?: string }) => ({ id: `card_${c.key}`, status: c.status ?? "todo" }));
 });
 afterEach(() => {
   vi.unstubAllEnvs();
@@ -342,5 +350,125 @@ describe("recordContactFormTouch", () => {
     await recordContactFormTouch({ prospectId, formUrl: "https://a.test", status: "sent", messageText: "first message text here", actor: "x" });
     const second = await recordContactFormTouch({ prospectId, formUrl: "https://a.test/other", status: "sent", messageText: "second message text here", actor: "x" });
     expect(second.warnings).toEqual(expect.arrayContaining([expect.stringMatching(/one touch per business/), expect.stringMatching(/no approved template/)]));
+  });
+});
+
+describe("finishing the request comms-outreach holds", () => {
+  const card = (requestId: string) => ({ key: `req:${requestId}:5:comms-outreach`, title: `${requestId} · outreach`, body: "brief", assignee: "comms-outreach" });
+
+  /** What the verifier's handoff leaves behind: comms-outreach owns it at stage outreach, status delivering, card open. */
+  async function heldByOutreach(requestId: string) {
+    await db.query("UPDATE requests SET owner_agent = 'comms-outreach', stage = 'outreach', status = 'delivering', meta = $2 WHERE id = $1",
+      [requestId, JSON.stringify({ card: card(requestId) })]);
+  }
+  const statusOf = async (id: string) => (await db.query<{ status: string }>("SELECT status FROM requests WHERE id = $1", [id]))[0].status;
+  const cardClosed = (requestId: string) =>
+    expect(mocks.upsertCard).toHaveBeenCalledWith(expect.objectContaining({ key: card(requestId).key, status: "done", note: expect.stringMatching(/^(delivered|cancelled): /) }));
+  const formTouch = (prospectId: string, over: Partial<Parameters<typeof recordContactFormTouch>[0]> = {}) =>
+    recordContactFormTouch({ prospectId, formUrl: "https://acme.test/contact", status: "sent", messageText: "Hello from Terragent, an AI agent: we checked your site", actor: "comms-outreach", ...over });
+
+  it("a sent contact-form touch delivers the free sample and closes its card", async () => {
+    const { prospectId, requestId } = await seedReadyProspect(db);
+    await seedTemplate(db);
+    await heldByOutreach(requestId);
+    const res = await formTouch(prospectId);
+    expect(res.closed).toEqual([{ request_id: requestId, status: "delivered" }]);
+    expect(await statusOf(requestId)).toBe("delivered");
+    cardClosed(requestId);
+    // An identical retry is a no-op for the request too.
+    expect(await formTouch(prospectId)).toMatchObject({ duplicate: true, closed: [] });
+  });
+
+  it("a final form skip cancels the sample; a form error leaves it open for a retry", async () => {
+    const captcha = await seedReadyProspect(db);
+    const broken = await seedReadyProspect(db);
+    await heldByOutreach(captcha.requestId);
+    await heldByOutreach(broken.requestId);
+    expect((await formTouch(captcha.prospectId, { status: "skipped", skipReason: "captcha", messageText: undefined })).closed)
+      .toEqual([{ request_id: captcha.requestId, status: "cancelled" }]);
+    expect((await formTouch(broken.prospectId, { status: "skipped", skipReason: "form_error", messageText: undefined })).closed).toEqual([]);
+    expect([await statusOf(captcha.requestId), await statusOf(broken.requestId)]).toEqual(["cancelled", "delivering"]);
+    const [ev] = await db.query<{ payload: { to: string; note: string } }>("SELECT payload FROM events WHERE request_id = $1 AND type = 'status.changed'", [captcha.requestId]);
+    expect(ev.payload).toMatchObject({ to: "cancelled", note: "Not contacted: contact form skipped (captcha)." });
+  });
+
+  it("a sent first-touch email delivers the sample; a blocked one leaves it open", async () => {
+    const sent = await seedReadyProspect(db, { contact_email: "ops@warm.test" });
+    const blocked = await seedReadyProspect(db, { contact_email: "ops@held.test" });
+    await seedTemplate(db);
+    await makeWarm("ops@warm.test");
+    await makeWarm("ops@held.test");
+    await heldByOutreach(sent.requestId);
+    await heldByOutreach(blocked.requestId);
+    expect((await sendOutreachEmail({ prospectId: sent.prospectId, kind: "outreach", actor: "comms-outreach" })).closed)
+      .toEqual([{ request_id: sent.requestId, status: "delivered" }]);
+    mocks.sendEmail.mockResolvedValueOnce({ status: "blocked", message_id: "msg_b", blocked_reason: "provider_limit:cooldown" });
+    expect(await sendOutreachEmail({ prospectId: blocked.prospectId, kind: "outreach", actor: "comms-outreach" })).toMatchObject({ status: "blocked", closed: [] });
+    expect([await statusOf(sent.requestId), await statusOf(blocked.requestId)]).toEqual(["delivered", "delivering"]);
+    cardClosed(sent.requestId);
+  });
+
+  it("leaves a sample alone while another agent still holds it", async () => {
+    const { prospectId, requestId } = await seedReadyProspect(db);
+    await seedTemplate(db);
+    await db.query("UPDATE requests SET owner_agent = 'verifier', status = 'verifying' WHERE id = $1", [requestId]);
+    expect((await formTouch(prospectId)).closed).toEqual([]);
+    expect(await statusOf(requestId)).toBe("verifying");
+  });
+
+  it("a re-handed run for a business already contacted, or one that must not be, finishes instead of looping", async () => {
+    await seedTemplate(db);
+    const done = await seedReadyProspect(db);
+    await heldByOutreach(done.requestId);
+    await formTouch(done.prospectId);
+    // A sample touched before touches finished requests, re-handed by the coordinator: still open, touch on record.
+    await db.query("UPDATE requests SET status = 'delivering' WHERE id = $1", [done.requestId]);
+    await expect(getOutreachContext({ prospectId: done.prospectId, actor: "comms-outreach" }))
+      .rejects.toThrow(new RegExp(`already contacted .*request ${done.requestId} closed as delivered`));
+    expect(await statusOf(done.requestId)).toBe("delivered");
+
+    const sibling = await seedReadyProspect(db, { domain: "acme-dup.test" });
+    const twin = await seedReadyProspect(db, { domain: "acme-dup.test", playbook: "mining" });
+    await seedTemplate(db, { playbook: "mining" });
+    await formTouch(sibling.prospectId, { formUrl: "https://acme-dup.test/contact" });
+    await heldByOutreach(twin.requestId);
+    await expect(getOutreachContext({ prospectId: twin.prospectId, actor: "comms-outreach" })).rejects.toThrow(/one touch per business \(request .* closed as cancelled/);
+
+    const gone = await seedReadyProspect(db, { status: "disqualified" });
+    await heldByOutreach(gone.requestId);
+    await expect(getOutreachContext({ prospectId: gone.prospectId, actor: "comms-outreach" })).rejects.toThrow(/prospect is disqualified: do not contact \(request/);
+    expect([await statusOf(twin.requestId), await statusOf(gone.requestId)]).toEqual(["cancelled", "cancelled"]);
+
+    // Gates a founder or time can clear never finish anything.
+    const unverified = await seedReadyProspect(db);
+    await heldByOutreach(unverified.requestId);
+    await db.query("UPDATE reports SET verifier_status = 'pending' WHERE request_id = $1", [unverified.requestId]);
+    await expect(getOutreachContext({ prospectId: unverified.prospectId })).rejects.toThrow(/not verified/);
+    expect(await statusOf(unverified.requestId)).toBe("delivering");
+  });
+
+  it("a sent follow-up delivers the monitor follow-up request comms-outreach was handed", async () => {
+    const { prospectId, requestId } = await seedReadyProspect(db, { contact_email: "ops@warm.test" });
+    await seedTemplate(db);
+    await seedTemplate(db, { playbook: "all", kind: "followup", subject: "New image for {{company}}", body: "{{new_info}} {{report_url}}" });
+    await makeWarm("ops@warm.test");
+    await heldByOutreach(requestId);
+    await sendOutreachEmail({ prospectId, kind: "outreach", actor: "comms-outreach" });
+    await db.query("UPDATE messages SET created_at = now() - interval '2 days' WHERE prospect_id = $1", [prospectId]);
+
+    const followup = await seedRequest(db, { source: "monitor", prospect_id: prospectId });
+    const customers = await seedRequest(db, { source: "monitor", prospect_id: prospectId, owner_agent: "comms-customer", status: "delivering" });
+    await heldByOutreach(followup);
+    await insert(db, "events", { type: "monitor.followup", actor: "analytics", request_id: followup, payload: { prospect_id: prospectId, new_info: "New clear scene 2026-11-12" } });
+    const res = await sendOutreachEmail({ prospectId, kind: "followup", newInfo: "A new clear scene on 12 Nov shows the water has receded.", actor: "comms-outreach" });
+    expect(res).toMatchObject({ status: "sent", closed: [{ request_id: followup, status: "delivered" }] });
+    expect([await statusOf(followup), await statusOf(customers), await statusOf(requestId)]).toEqual(["delivered", "delivering", "delivered"]);
+
+    // Nothing new any more: a second follow-up request for it is cancelled, not left for the coordinator.
+    const stale = await seedRequest(db, { source: "monitor", prospect_id: prospectId });
+    await heldByOutreach(stale);
+    await expect(sendOutreachEmail({ prospectId, kind: "followup", newInfo: "Just checking in on our last note, any thoughts?", actor: "comms-outreach" }))
+      .rejects.toThrow(/no new information .*closed as cancelled/);
+    expect(await statusOf(stale)).toBe("cancelled");
   });
 });

@@ -61,6 +61,9 @@ def test_search_posts_the_stac_body(monkeypatch):
     assert body["intersects"]["coordinates"][0][0] == [LA_BBOX[0], LA_BBOX[1]]
     assert body["sortby"] == [{"field": "datetime", "direction": "desc"}]
     assert body["query"] == {"eo:cloud_cover": {"lte": 80}} and body["limit"] == 50
+    # The page is all we read: "earliest" must ask for the oldest end of the window.
+    stac.search("sentinel-2-l2a", LA_BBOX, Window("2023-04-20", "2026-11-07"), oldest_first=True)
+    assert sent["body"]["sortby"] == [{"field": "datetime", "direction": "asc"}]
 
 
 def test_sign_caches_token_and_skips_non_blob_urls(monkeypatch):

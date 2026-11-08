@@ -1,11 +1,13 @@
 /** Verifier verdicts: pass releases the report for delivery; fail loops back to Brain 2 up to CAPS.maxReportRevisions. */
 import { CAPS } from "../config";
-import { VERIFIER_CHECKS, Verdict } from "../domain";
+import { type AnalysisResult, VERIFIER_CHECKS, Verdict } from "../domain";
 import { logDecision, logEvent } from "../events";
-import { errorMessage, json, query } from "./db";
-import { attachReportToIndex } from "./earth-index";
+import { latestAnalysis } from "./analyses";
+import { errorMessage, json, query, queryOne } from "./db";
+import { attachReportToIndex, isChangeMetric } from "./earth-index";
+import { createMonitor } from "./monitors";
 import { requireReport } from "./reports";
-import { addNote, handoff, isTerminal, requireRequest, setStatus } from "./requests";
+import { addNote, handoff, isTerminal, requireRequest, setStatus, type RequestRow } from "./requests";
 import { checkReportRules } from "./rules";
 
 export async function saveVerdict(input: Verdict, actor: string) {
@@ -36,10 +38,11 @@ export async function saveVerdict(input: Verdict, actor: string) {
 
   if (v.pass) {
     await attachReportToIndex(req.id, report.id);
+    const monitorId = req.is_free_sample ? await monitorSample(req) : null;
     const next = req.is_free_sample
       ? { to: "comms-outreach" as const, stage: "outreach", instructions: `Verified free sample report ${report.id} is ready. Use get_outreach_context to make the first touch` }
       : { to: "comms-customer" as const, stage: "delivery", instructions: `Verified report ${report.id} is ready. Deliver it with deliver_report in the customer's thread` };
-    return { saved: true, pass: true, ...(await tryHandoff(req.id, actor, next)) };
+    return { saved: true, pass: true, ...(monitorId ? { monitor_id: monitorId } : {}), ...(await tryHandoff(req.id, actor, next)) };
   }
 
   const revisions = req.revisions + 1;
@@ -65,5 +68,35 @@ async function tryHandoff(requestId: string, from: string, next: { to: "comms-cu
     return { handed_off_to: next.to, ...(await handoff({ requestId, from, ...next })) };
   } catch (e) {
     return { handoff_error: errorMessage(e), next };
+  }
+}
+
+/** Channels a monitor follow-up can reach (outbound/monitors.ts followupTarget): contact forms get one touch only. */
+const FOLLOWUP_CHANNELS = ["email_warm", "email_direct"];
+
+/** The metric a site monitor watches: an index that is itself a change (dNBR), else the first index with a before/after delta. */
+export function monitorMetricFor(result: Pick<AnalysisResult, "indices"> | null | undefined): string | null {
+  const indices = result?.indices ?? [];
+  const change = indices.find((i) => isChangeMetric(i.name) && (i.delta ?? i.after_mean) !== null);
+  if (change) return change.name;
+  const delta = indices.find((i) => i.delta !== null);
+  return delta ? `${delta.name}_delta` : null;
+}
+
+/**
+ * A verified free sample for a prospect we can follow up by email gets a site monitor straight away, so a new clear
+ * scene or a change becomes a follow-up with new information (spec §3.1/§8) without anyone asking. Best effort.
+ */
+async function monitorSample(req: RequestRow): Promise<string | null> {
+  if (!req.prospect_id || req.monitor_id) return null;
+  try {
+    const p = await queryOne<{ channel: string | null }>("SELECT channel FROM prospects WHERE id = $1", [req.prospect_id]);
+    if (!FOLLOWUP_CHANNELS.includes(p?.channel ?? "")) return null;
+    const metric = monitorMetricFor((await latestAnalysis(req.id))?.result);
+    if (!metric) return null;
+    return (await createMonitor({ requestId: req.id, metric }, "system")).monitor_id;
+  } catch (e) {
+    await logEvent("monitor.auto_failed", "system", { error: errorMessage(e) }, req.id);
+    return null;
   }
 }

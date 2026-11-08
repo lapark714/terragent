@@ -40,12 +40,15 @@ def test_falls_back_to_clearest_newest_on_ties():
 
 @pytest.fixture
 def fake_catalog(monkeypatch):
-    """Stub search + screen: per-collection item lists and a clear fraction per item id."""
-    state = {"items": {}, "clear": {}, "queries": []}
+    """Stub search + screen: per-collection item lists and a clear fraction per item id. Like the real API, search
+    returns one page: items sorted by the requested direction, cut to `limit`."""
+    state = {"items": {}, "clear": {}, "queries": [], "oldest_first": []}
 
-    def search(collection, bbox, window, query=None, limit=50):
+    def search(collection, bbox, window, query=None, limit=50, oldest_first=False):
         state["queries"].append((collection, query))
-        return list(state["items"].get(collection, []))
+        state["oldest_first"].append(oldest_first)
+        items = sorted(state["items"].get(collection, []), key=lambda i: i["properties"]["datetime"], reverse=not oldest_first)
+        return items[:limit]
 
     def screen(item, sensor, bbox):
         return Screened(item, state["clear"].get(item["id"], 1.0), 0.1)
@@ -133,3 +136,27 @@ def test_find_scene_can_prefer_the_earliest_clear_scene(fake_catalog):
     first, _ = scenes.find_scene("after", LA_BBOX, WINDOW, 20, SENTINEL2, earliest=True)
     assert latest and latest.item["id"] == "D28"
     assert first and first.item["id"] == "D22"
+
+
+def test_find_scene_earliest_reads_the_oldest_page_of_a_long_window(fake_catalog):
+    # Event date to today: 60 passes, more than one STAC page. Only the first two after the event are clear.
+    from datetime import date, timedelta
+
+    days = [(date(2023, 4, 21) + timedelta(days=5 * i)).isoformat() for i in range(60)]
+    fake_catalog["items"]["sentinel-2-l2a"] = [make_item(f"D{d}", f"{d}T18:00:00Z") for d in days]
+    fake_catalog["clear"].update({f"D{d}": 1.0 if i < 2 else 0.2 for i, d in enumerate(days)})
+    window = Window(days[0], days[-1])
+    first, notes = scenes.find_scene("after", LA_BBOX, window, 20, SENTINEL2, earliest=True)
+    assert first and first.item["id"] == f"D{days[0]}" and notes == []
+    assert fake_catalog["oldest_first"] == [True]
+    # Newest first (the default) never sees those scenes: only the newest 50 are on its page.
+    latest, _ = scenes.find_scene("after", LA_BBOX, window, 20, SENTINEL2)
+    assert latest and latest.item["id"] != f"D{days[0]}"
+    assert fake_catalog["oldest_first"] == [True, False]
+
+
+def test_find_scene_earliest_keeps_the_tile_pin_and_order(fake_catalog):
+    fake_catalog["items"]["sentinel-2-l2a"] = [make_item(f"D{d}", f"2026-10-{d:02d}T18:00:00Z") for d in (19, 28, 22, 25)]
+    first, _ = scenes.find_scene("after", LA_BBOX, WINDOW, 20, SENTINEL2, pin=make_item(tile="11SLT"), earliest=True)
+    assert first and first.item["id"] == "D19"
+    assert fake_catalog["queries"][0][1]["s2:mgrs_tile"] == {"eq": "11SLT"} and fake_catalog["oldest_first"] == [True]

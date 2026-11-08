@@ -111,6 +111,19 @@ describe("send_customer_message kind update", () => {
     expect(replyInThread).not.toHaveBeenCalled();
     expect(sendEmail).not.toHaveBeenCalled();
   });
+
+  it("a monitor follow-up of a free sample (the prospect replied, so comms-customer has it) goes out from hello@", async () => {
+    const followup = await createRequest({
+      question: "Monitoring update (dnbr) for: Free sample: burn at the depot", source: "monitor", priority: "background", isFreeSample: true,
+      email: `ops${n}@depot.test`, meta: { monitor_id: `mon_s${n}`, new_info: "new clear scene 2026-11-06" },
+    });
+    await sql("UPDATE requests SET status = 'delivering', stage = 'delivery', owner_agent = 'comms-customer' WHERE id = $1", [followup.id]);
+    const res = await call("comms-customer", "send_customer_message", { request_id: followup.id, kind: "update", text: "dNBR fell from 0.17 to 0.09: regrowth." });
+    expect(res).toMatchObject({ status: "sent", request_status: "delivered" });
+    expect(vi.mocked(sendEmail).mock.calls[0][0]).toMatchObject({ inbox: "hello", to: `ops${n}@depot.test` });
+    // Only that update: no clarifying questions on samples from hello@.
+    expect((await call("comms-customer", "send_customer_message", { request_id: followup.id, kind: "clarifying_question", text: "Which depot?" })).error).toMatch(/comms-outreach/);
+  });
 });
 
 describe("record_opt_out", () => {

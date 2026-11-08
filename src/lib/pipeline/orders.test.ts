@@ -3,7 +3,8 @@ import { getDb } from "../db/client";
 import { sendEmail } from "../email/send";
 import { logDecision, logIntervention } from "../events";
 import { saveAcquisitionPlan } from "./acquisition";
-import { approveOrder, getOrder, NAIVE_APPROVER, prepareOrder, requestSupplierQuote } from "./orders";
+import { upsertCard } from "../naive/board";
+import { approveOrder, getOrder, NAIVE_APPROVER, prepareOrder, recordSupplierQuote, requestSupplierQuote, sendSupplierEmail } from "./orders";
 import { createRequest, getRequest } from "./requests";
 import { saveDataSpec } from "./specs";
 import { samplePlan, sampleSpec, SITE, setupMemoryDb } from "./testing";
@@ -12,9 +13,11 @@ vi.mock("../naive/sessions", () => ({ startAgentSession: vi.fn() }));
 vi.mock("../naive/board", () => ({ upsertCard: vi.fn() }));
 vi.mock("../email/send", () => ({
   sendEmail: vi.fn(async () => ({ status: "blocked", message_id: "msg_1", blocked_reason: "inbox data not armed" })),
-  replyInThread: vi.fn(),
+  replyInThread: vi.fn(async () => ({ status: "sent", message_id: "msg_r", thread_id: "thr-sup" })),
 }));
-vi.mock("../email/threads", () => ({ getThread: vi.fn(async () => null) }));
+vi.mock("../email/threads", () => ({
+  getThread: vi.fn(async (id: string) => (id === "thr-sup" ? { thread_id: id, inbox: "data", messages: [{ direction: "inbound", agentmail_message_id: "<s1@up>" }] } : null)),
+}));
 vi.mock("../email/templates", () => ({
   renderSupplierQuoteRequest: (a: { orderId: string }) => ({ subject: `Quote request ${a.orderId}`, text: "Please quote", html: "<p>Please quote</p>" }),
 }));
@@ -121,5 +124,53 @@ describe("supplier quote requests", () => {
     const res = await requestSupplierQuote({ requestId: req.id, providerId: "up42-pleiades-neo", product: "archive 30 cm", reason: "Second price for comparison" }, "acquisition");
     expect(res).toMatchObject({ status: "no_email_contact", contact: "https://up42.com/contact-us/sales" });
     expect(sendEmail).not.toHaveBeenCalled();
+  });
+});
+
+describe("supplier replies (the order's board card)", () => {
+  const CARD = { key: "order:%", title: "Supplier reply on order %", body: "New email from sales@arlula.com …" };
+
+  /** An order whose supplier replied: email/inbound.ts opened a card for comms-suppliers and kept its ref on the order. */
+  async function repliedOrder(status = "acquiring") {
+    const req = await paidRequest();
+    const q = await requestSupplierQuote({ requestId: req.id, providerId: "arlula-archive", product: "archive 50 cm", reason: "Compare against SkyWatch list prices" }, "acquisition");
+    const card = { key: CARD.key.replace("%", q.order_id!), title: CARD.title.replace("%", q.order_id!), body: CARD.body, id: "crd_sup" };
+    await (await getDb()).query("UPDATE orders SET quote_thread_id = 'thr-sup', meta = meta || $2::jsonb WHERE id = $1", [q.order_id, JSON.stringify({ card })]);
+    await (await getDb()).query("UPDATE requests SET status = $2 WHERE id = $1", [req.id, status]);
+    vi.clearAllMocks();
+    return { req, orderId: q.order_id!, card };
+  }
+
+  it("record_supplier_quote closes the card (same title and body) and says to hand off while the request is open", async () => {
+    const { orderId, card } = await repliedOrder();
+    const res = await recordSupplierQuote({ orderId, quotedAmount: 76, currency: "usd", deliveryTime: "24 h" }, "comms-suppliers");
+    expect(vi.mocked(upsertCard)).toHaveBeenCalledWith({
+      key: card.key, title: card.title, body: card.body, assignee: "comms-suppliers", status: "done", note: "Quote recorded: 76 USD, delivery 24 h.",
+    });
+    expect(res).toMatchObject({ request_status: "acquiring", next: expect.stringMatching(/handoff to acquisition/) });
+  });
+
+  it("on a finished request it says to add a note instead of handing off", async () => {
+    const { orderId } = await repliedOrder("delivered");
+    const res = await recordSupplierQuote({ orderId, quotedAmount: 90, currency: "EUR" }, "comms-suppliers");
+    expect(res).toMatchObject({ request_status: "delivered", next: expect.stringMatching(/can't be handed off: terragent.add_note/) });
+    expect(vi.mocked(upsertCard)).toHaveBeenCalledWith(expect.objectContaining({ status: "done" }));
+  });
+
+  it("a sent follow-up question closes the card too; a board failure never fails the tool", async () => {
+    const { orderId, req } = await repliedOrder();
+    vi.mocked(upsertCard).mockRejectedValueOnce(new Error("board down"));
+    const res = await sendSupplierEmail({ orderId, text: "Could you confirm the minimum order area?" }, "comms-suppliers");
+    expect(res.status).toBe("sent");
+    expect(vi.mocked(upsertCard)).toHaveBeenCalledWith(expect.objectContaining({ status: "done", note: expect.stringMatching(/Follow-up sent/) }));
+    const [evt] = await (await getDb()).query<{ payload: { order_id: string } }>("SELECT payload FROM events WHERE request_id = $1 AND type = 'board.sync_failed'", [req.id]);
+    expect(evt.payload.order_id).toBe(orderId);
+  });
+
+  it("an order without a reply card touches no card", async () => {
+    const req = await paidRequest();
+    const q = await requestSupplierQuote({ requestId: req.id, providerId: "arlula-archive", product: "archive 50 cm", reason: "Compare against SkyWatch list prices" }, "acquisition");
+    await recordSupplierQuote({ orderId: q.order_id!, quotedAmount: 50, currency: "USD" }, "comms-suppliers");
+    expect(vi.mocked(upsertCard)).not.toHaveBeenCalled();
   });
 });

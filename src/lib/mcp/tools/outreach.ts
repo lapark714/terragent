@@ -17,7 +17,7 @@ export function register(registrar: ToolRegistrar): void {
   r.tool(
     "get_outreach_context",
     { prospect_id: z.string(), vars: Vars },
-    (a) => getOutreachContext({ prospectId: a.prospect_id, vars: a.vars }),
+    (a, ctx) => getOutreachContext({ prospectId: a.prospect_id, vars: a.vars, actor: ctx.agent }),
   );
 
   r.tool(

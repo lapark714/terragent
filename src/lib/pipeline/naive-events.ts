@@ -14,7 +14,11 @@ export async function claimWebhookEvent(evt: Pick<NaiveWebhookEnvelope, "id" | "
   return rows.length > 0;
 }
 
-interface IdleData { session_id?: string; stop_reason?: string; pending_actions?: { name?: string; kind?: string }[]; error?: unknown; code?: string; deployment_id?: string }
+interface IdleData {
+  session_id?: string; stop_reason?: string; pending_actions?: { name?: string; kind?: string }[]; error?: unknown; code?: string; deployment_id?: string;
+  /** The agent's RunSummary (naive/schemas.ts) when it submitted one. */
+  structured_output?: { request_id?: unknown } | null;
+}
 
 const ATTENTION = new Set(["error", "budget_paused"]);
 
@@ -32,7 +36,8 @@ export async function processNaiveEvent(evt: NaiveWebhookEnvelope): Promise<void
 async function onSessionIdle(d: IdleData) {
   if (!d.session_id) return;
   const stop = d.stop_reason ?? null;
-  const spend = await recordSessionIdle({ sessionId: d.session_id, stopReason: stop });
+  const summaryRequestId = typeof d.structured_output?.request_id === "string" ? d.structured_output.request_id : null;
+  const spend = await recordSessionIdle({ sessionId: d.session_id, stopReason: stop, summaryRequestId });
   const base = { session_id: d.session_id, agent: spend.agent, stop_reason: stop, cost_usd: spend.cost_usd, deployment_id: d.deployment_id ?? null };
 
   if (stop === "awaiting_approval") {

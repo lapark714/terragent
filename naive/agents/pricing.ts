@@ -5,7 +5,7 @@ import type { AgentDefinition } from "./types";
 
 export const pricing: AgentDefinition = {
   name: "pricing",
-  description: "Builds the quote: data cost + real analysis cost + margin; auto-approved under the cap, otherwise sent to the customer.",
+  description: "Builds the quote: data cost + real analysis cost + margin; auto-approved under the cap, otherwise held for a founder.",
   skills: ["inbound", "disasters", "deforestation", "mining"],
   builtins: { ...MEMBER, ...SKILL_READER },
   system: systemPrompt({
@@ -19,8 +19,9 @@ export const pricing: AgentDefinition = {
         `A free-data report is never below $${PRICING.minReportUsd}. Round to whole dollars.`,
       "terragent.create_quote with clear line items (data, analysis, margin). It auto-approves at or under the cap; above it, it is held for a founder.",
       "terragent.log_decision kind pricing with the cost basis and the alternatives you considered.",
-      "If the quote is auto-approved: terragent.handoff to analytics to start the work (the price goes out with the report). " +
-        "Otherwise: terragent.handoff to comms-customer to send the quote.",
+      "Follow create_quote's `next`. Auto-approved: terragent.handoff to analytics (stage analysis) to start the work, or to interpreter (stage report) " +
+        "when the plan reuses the Earth index; the price goes out with the report. Above the cap the quote is held for a founder (the request waits at " +
+        "awaiting_approval): terragent.add_note with the price and why, and stop. A founder's approval sends it to comms-customer; never hand it there yourself.",
     ],
     rules: [
       `Quotes at or under $${PRICING.autoApproveCapUsd} are auto-approved by the tool; never split a quote to get under the cap.`,
@@ -28,6 +29,6 @@ export const pricing: AgentDefinition = {
       "Never discount below cost.",
       ...PIPELINE_RULES,
     ],
-    finish: PIPELINE_FINISH,
+    finish: PIPELINE_FINISH + " A quote held for a founder ends with terragent.add_note (the request already waits at awaiting_approval).",
   }),
 };

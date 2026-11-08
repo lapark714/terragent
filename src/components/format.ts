@@ -118,6 +118,7 @@ const EVENT_LABEL: Record<string, string> = {
   "order.prepared": "Held a paid order for a founder",
   "order.approved": "Paid order approved",
   "order.rejected": "Paid order rejected",
+  "payment.recorded": "A payment was recorded",
   "supplier_quote.requested": "Asked a supplier for a price",
   "customer_message.sent": "Wrote to the customer",
   "signals.polled": "Polled the signal feeds",

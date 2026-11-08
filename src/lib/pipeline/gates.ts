@@ -5,6 +5,7 @@
  */
 import { logEvent } from "../events";
 import { query, queryOne } from "./db";
+import { recordCommittedRevenue } from "./revenue";
 
 export interface QuoteState { id: string; status: string; auto_approved: boolean }
 interface GatedRequest { id: string; source: string; is_free_sample: boolean; quote_id: string | null }
@@ -48,4 +49,5 @@ export async function markQuoteAccepted(req: GatedRequest, actor: string): Promi
   if (quote.status !== "sent") throw new Error(`Quote ${quote.id} is ${quote.status}; only a quote sent to the customer can be accepted.`);
   await query("UPDATE quotes SET status = 'accepted', updated_at = now() WHERE id = $1", [quote.id]);
   await logEvent("quote.accepted", actor, { quote_id: quote.id }, req.id);
+  await recordCommittedRevenue({ requestId: req.id, quoteId: quote.id, actor });
 }

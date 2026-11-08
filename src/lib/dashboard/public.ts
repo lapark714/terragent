@@ -121,9 +121,12 @@ export interface RequestProgress {
   report: { url: string; path: string; title: string; answer: string; confidence: Confidence; limitations: string; humanReview: boolean } | null;
 }
 
+/** The shape of a request id (newId("request")); anything else is answered "not found" without a read. */
+export const REQUEST_ID_RE = /^req_[a-z0-9]{6,32}$/;
+
 /** A request's progress. The id is the capability (it is only shown in full to whoever made the request). */
 export async function getRequestProgress(id: string): Promise<RequestProgress | null> {
-  if (!/^req_[a-z0-9]{6,32}$/.test(id)) return null;
+  if (!REQUEST_ID_RE.test(id)) return null;
   const db = await getDb();
   const [r] = await db.query<Record<string, unknown>>(
     "SELECT id, status, owner_agent, question, location_text, refusal_reason, created_at, updated_at FROM requests WHERE id = $1",
@@ -169,9 +172,41 @@ export async function getRequestProgress(id: string): Promise<RequestProgress | 
   };
 }
 
-/** The API key that created a request through POST /api/answer, if any. */
-export async function requestApiKeyId(id: string): Promise<string | null> {
+/** The request's current quote, as GET /api/answer/{id} shows it to the key that created the request. */
+export interface ApiQuote {
+  id: string;
+  price_usd: number;
+  /** approved (goes ahead) | needs_approval (a founder checks it) | sent (emailed, waiting for you) | accepted | declined | expired */
+  status: string;
+  auto_approved: boolean;
+  line_items: { label: string; amount_usd: number }[];
+  payment_link: string | null;
+}
+
+/** The API key that created a request through POST /api/answer (null if none), and the request's quote. */
+export async function getApiRequest(id: string): Promise<{ keyId: string | null; quote: ApiQuote | null } | null> {
+  if (!REQUEST_ID_RE.test(id)) return null;
   const db = await getDb();
-  const [r] = await db.query<{ key_id: string | null }>("SELECT meta->>'api_key_id' AS key_id FROM requests WHERE id = $1", [id]);
-  return r?.key_id ?? null;
+  const [r] = await db.query<{
+    key_id: string | null; quote_id: string | null; price_usd: unknown; quote_status: string | null; auto_approved: boolean | null;
+    line_items: unknown; payment_link: string | null;
+  }>(
+    `SELECT r.meta->>'api_key_id' AS key_id, q.id AS quote_id, q.price_usd, q.status AS quote_status, q.auto_approved, q.line_items, q.payment_link
+     FROM requests r LEFT JOIN quotes q ON q.id = r.quote_id WHERE r.id = $1`,
+    [id],
+  );
+  if (!r) return null;
+  return {
+    keyId: r.key_id ?? null,
+    quote: r.quote_id
+      ? {
+          id: r.quote_id,
+          price_usd: numOrNull(r.price_usd) ?? 0,
+          status: String(r.quote_status),
+          auto_approved: r.auto_approved === true,
+          line_items: arr(r.line_items).slice(0, 8).map((i) => ({ label: String(i.label ?? "").slice(0, 80), amount_usd: numOrNull(i.amount_usd) ?? 0 })),
+          payment_link: str(r.payment_link),
+        }
+      : null,
+  };
 }

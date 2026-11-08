@@ -46,7 +46,7 @@ export function register(r: ToolRegistrar): void {
       request_id: z.string(),
       metric: z.string().min(2).describe("metric to watch, e.g. ndvi_mean or dnbr_mean"),
       threshold: z.number().nullable().optional().describe("change that triggers a follow-up (default: the recipe's change threshold)"),
-      cadence: z.string().optional().describe('5-field cron, default weekly "0 14 * * 1"'),
+      cadence: z.string().optional().describe('5-field cron in UTC; leave it out for the default (every 12 hours, "0 */12 * * *")'),
       recipe: Recipe.optional(),
     },
     async (a, ctx) => createMonitor({ requestId: a.request_id, metric: a.metric, threshold: a.threshold, cadence: a.cadence, recipe: a.recipe }, ctx.agent),

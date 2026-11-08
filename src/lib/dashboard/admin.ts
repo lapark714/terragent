@@ -1,7 +1,8 @@
 /**
  * Founder actions from the dashboard. Every one is authenticated with ADMIN_TOKEN and leaves exactly one
  * intervention (actor + reason), because judges count human steps. Approving an order records the
- * decision only: buying data stays a manual founder step (CLAUDE.md hard rules).
+ * decision only: buying data stays a manual founder step (CLAUDE.md hard rules). Recording a payment is
+ * bookkeeping: customers pay through a founder's Stripe link, and nothing reports that back automatically.
  */
 import { createHash, timingSafeEqual } from "node:crypto";
 import { z } from "zod";
@@ -14,6 +15,7 @@ import { approveQuote, rejectQuote } from "../pipeline/quotes";
 import { SETTING } from "../settings";
 import { getInboxArmed, NAIVE_APPROVALS_CACHE_KEY } from "./approvals";
 import { invalidateDashboard } from "./cache";
+import { shortId } from "./mask";
 import { invalidateLive, num } from "./rows";
 
 export type AdminAuth = "ok" | "disabled" | "denied";
@@ -35,6 +37,13 @@ export const AdminAction = z.discriminatedUnion("action", [
   z.object({ action: z.literal("quote"), quote_id: z.string().min(1), decision: z.enum(["approve", "reject"]), ...who }),
   z.object({ action: z.literal("template"), template_id: z.string().min(1), decision: z.enum(["approve", "retire"]), ...who }),
   z.object({ action: z.literal("inbox"), inbox: Inbox, armed: z.boolean(), ...who }),
+  z.object({
+    action: z.literal("payment"),
+    /** The full id (Stripe's client_reference_id on the payment link) or the short id the public dashboard shows. */
+    request_id: z.string().trim().regex(/^req_[a-z0-9]{4,32}$/, "Use the request id: req_ and its letters, as on the dashboard or in Stripe."),
+    amount_usd: z.number().min(0.01).max(100_000),
+    ...who,
+  }),
 ]);
 export type AdminAction = z.infer<typeof AdminAction>;
 
@@ -171,6 +180,76 @@ async function setInboxArmed(a: Extract<AdminAction, { action: "inbox" }>) {
   return { done: `${a.inbox} inbox ${a.armed ? "armed" : "disarmed"}` };
 }
 
+interface FoundRequest { id: string; quote_id: string | null; prospect_id: string | null; price: number | null }
+
+/** A request by its full id, or by the dashboard's short id (req_ + 4) when exactly one request has it. */
+async function findRequest(id: string): Promise<FoundRequest> {
+  const db = await getDb();
+  const select = `SELECT r.id, r.quote_id, r.prospect_id, COALESCE(q.price_usd, r.price_usd) AS price
+                  FROM requests r LEFT JOIN quotes q ON q.id = r.quote_id`;
+  type Row = Omit<FoundRequest, "price"> & { price: unknown };
+  let rows = await db.query<Row>(`${select} WHERE r.id = $1`, [id]);
+  if (!rows.length && id.length === 8) rows = await db.query<Row>(`${select} WHERE left(r.id, 8) = $1 ORDER BY r.created_at DESC LIMIT 2`, [id]);
+  if (rows.length > 1) throw new AdminConflict(`More than one request starts with ${id}. Paste the full id (Stripe shows it as the client reference).`);
+  if (!rows.length) throw new AdminConflict(`No request ${id}. Check the id on the dashboard or in Stripe's client reference.`);
+  const [r] = rows;
+  return { id: r.id, quote_id: r.quote_id, prospect_id: r.prospect_id, price: r.price === null || r.price === undefined ? null : num(r.price) };
+}
+
+/** How long an identical payment (same request, same amount) counts as a double click rather than a second payment. */
+const DUPLICATE_PAYMENT_MINUTES = 10;
+
+/**
+ * Money that was committed (an accepted quote, pipeline/revenue.ts) and is now paid stops counting as committed, so
+ * paid + committed never counts the same dollars twice (the coordinator's value input adds them). A partial payment
+ * leaves the rest committed.
+ */
+async function settleCommitted(quoteId: string, amount: number) {
+  const db = await getDb();
+  const [committed] = await db.query<{ id: string; amount_usd: unknown }>(
+    "SELECT id, amount_usd FROM revenue WHERE quote_id = $1 AND kind = 'committed' ORDER BY recorded_at, id LIMIT 1",
+    [quoteId],
+  );
+  if (!committed) return;
+  const rest = Math.round((num(committed.amount_usd) - amount) * 100) / 100;
+  if (rest > 0) await db.query("UPDATE revenue SET amount_usd = $2 WHERE id = $1", [committed.id, rest]);
+  else await db.query("DELETE FROM revenue WHERE id = $1", [committed.id]);
+}
+
+/**
+ * A founder saw a customer's payment (Stripe link) and records it: one `revenue` row of kind 'paid', linked to the
+ * request's quote, so the funnel's paid stage and the Money panel count it. One intervention; no agent is woken.
+ */
+async function recordPayment(a: Extract<AdminAction, { action: "payment" }>) {
+  const db = await getDb();
+  const req = await findRequest(a.request_id);
+  const amount = Math.round(a.amount_usd * 100) / 100;
+  // One statement, so a double click can't record the same payment twice.
+  const [row] = await db.query<{ id: string }>(
+    `INSERT INTO revenue (request_id, quote_id, amount_usd, kind, note)
+     SELECT $1::text, $2::text, $3::numeric, 'paid', $4::text
+     WHERE NOT EXISTS (
+       SELECT 1 FROM revenue WHERE request_id = $1::text AND kind = 'paid' AND amount_usd = $3::numeric
+         AND recorded_at > now() - make_interval(mins => $5::int))
+     RETURNING id`,
+    [req.id, req.quote_id, amount, `recorded by ${a.actor}: ${a.reason}`.slice(0, 600), DUPLICATE_PAYMENT_MINUTES],
+  );
+  const label = shortId(req.id);
+  if (!row) throw new AdminConflict(`A $${amount} payment for ${label} was already recorded in the last ${DUPLICATE_PAYMENT_MINUTES} minutes.`);
+  if (req.quote_id) await settleCommitted(req.quote_id, amount);
+  await logIntervention({ actor: a.actor, action: "record_payment", reason: a.reason, requestId: req.id, refId: req.quote_id ?? req.id });
+  await logEvent("payment.recorded", `human:${a.actor}`, { amount_usd: amount, quote_id: req.quote_id, revenue_id: String(row.id) }, req.id);
+  // The business behind a free sample paid: the outbound funnel counts it from here.
+  if (req.prospect_id) {
+    await db.query(
+      "UPDATE prospects SET status = 'paid', updated_at = now() WHERE id = $1 AND status NOT IN ('paid', 'opted_out', 'disqualified')",
+      [req.prospect_id],
+    );
+  }
+  const off = req.price !== null && Math.abs(req.price - amount) >= 0.01 ? ` (the quoted price was $${req.price})` : "";
+  return { done: `Recorded a $${amount} payment for ${label}${off}.` };
+}
+
 /** Runs one founder action, then drops the cached dashboard reads so every viewer sees it on the next poll. */
 export async function runAdminAction(a: AdminAction): Promise<{ done: string }> {
   try {
@@ -203,5 +282,7 @@ async function dispatch(a: AdminAction): Promise<{ done: string }> {
     }
     case "inbox":
       return setInboxArmed(a);
+    case "payment":
+      return recordPayment(a);
   }
 }

@@ -149,6 +149,23 @@ describe("agent configs", () => {
     expect(withUrl.interpreter.system).toMatch(/indicators/);
   });
 
+  it("prompts match what the tools already do", () => {
+    // save_verdict logs the verification decision and hands off itself.
+    expect(withUrl.verifier.system).not.toMatch(/log_decision kind verification/);
+    expect(withUrl.verifier.system).toMatch(/handoff_error/);
+    // A quote above the cap is held for a founder; pricing never sends it to comms-customer.
+    expect(withUrl.pricing.system).toMatch(/held for a founder[\s\S]*add_note/);
+    expect(withUrl.pricing.system).not.toMatch(/handoff to comms-customer to send the quote/);
+    // Analytics: per-run job files on the shared computer, and monitor mode for re-checks.
+    expect(withUrl.analytics.system).toMatch(/job_path/);
+    expect(withUrl.analytics.system).toMatch(/get_analysis_job\(\{ request_id, monitor_id \}\)/);
+    // Comms 2: screening before a reply's handoff; prospect replies plan new work; stated prices are recorded.
+    expect(withUrl["comms-customer"].system).toMatch(/record_screening \(allowed, ok\) before any handoff/);
+    expect(withUrl["comms-customer"].system).toMatch(/stated_willingness_usd/);
+    // Comms 1: hand off only while the request is open.
+    expect(withUrl["comms-suppliers"].system).toMatch(/still open[\s\S]*add_note/);
+  });
+
   it("splits the coordinator into a cheap digest mode and the scheduled review", () => {
     const prompt = withUrl.coordinator.system;
     expect(DEPLOYMENTS.find((d) => d.key === "coordinator-review")!.prompt.split("\n")[0]).toContain(REVIEW_MARKER);
@@ -208,6 +225,11 @@ describe("deployments", () => {
       expect(d.window).toBe(AGENT_BUDGETS[d.agent].window);
     }
     expect(DEPLOYMENTS.filter((d) => d.agent === "sourcing").map((d) => d.key)).toEqual(["sourcing-disasters", "sourcing-deforestation", "sourcing-mining"]);
+    // Follow-ups with new information run on their own schedule (spec §3.1/§8).
+    const followups = DEPLOYMENTS.find((d) => d.key === "outreach-followups")!;
+    expect(followups).toMatchObject({ agent: "comms-outreach" });
+    expect(followups.prompt).toMatch(/terragent\.list_followups[\s\S]*kind=followup[\s\S]*log_decision kind outreach/);
+    expect(firesPerDay(followups.cron)).toBe(4);
     // every 3 h per playbook, staggered so no two sweeps share an hour
     const hours = DEPLOYMENTS.filter((d) => d.agent === "sourcing").flatMap((d) => d.cron.split(" ")[1].split(",").map(Number));
     expect(hours).toHaveLength(24);

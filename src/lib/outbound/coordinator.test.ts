@@ -150,6 +150,28 @@ describe("listStuckRequests", () => {
     });
     expect(rows.find((r) => r.id === "req_stale")?.minutes_since_update).toBeGreaterThanOrEqual(179);
   });
+
+  it("drops failures older than a day and lists what the coordinator can act on first", async () => {
+    const hoursAgo = (h: number) => new Date(Date.now() - h * 3_600_000);
+    await seedRequest(db, { id: "req_failed_old", status: "failed", updated_at: hoursAgo(30) });
+    await seedRequest(db, { id: "req_failed_new", status: "failed", updated_at: hoursAgo(2) });
+    await seedRequest(db, { id: "req_stale_old", status: "planning", updated_at: hoursAgo(48) });
+    await seedRequest(db, { id: "req_stale_new", status: "analyzing", updated_at: hoursAgo(3) });
+    expect((await listStuckRequests()).map((r) => r.id)).toEqual(["req_stale_old", "req_stale_new", "req_failed_new"]);
+    expect((await listStuckRequests({ failedWithinHours: 48 })).map((r) => r.id)).toContain("req_failed_old");
+    // The limit keeps the actionable ones, not the failures.
+    expect((await listStuckRequests({ limit: 2 })).map((r) => r.reason)).toEqual(["stale", "stale"]);
+  });
+
+  it("points a stale sample whose first touch already went out back at comms-outreach", async () => {
+    const old = new Date(Date.now() - 3 * 3_600_000);
+    await seedRequest(db, { id: "req_touched", status: "delivering", owner_agent: "comms-outreach", updated_at: old });
+    await seedRequest(db, { id: "req_untouched", status: "delivering", owner_agent: "comms-outreach", updated_at: old });
+    await insert(db, "messages", { id: "msg_touch", direction: "outbound", inbox: "outreach", request_id: "req_touched", kind: "outreach", channel: "contact_form", status: "sent" });
+    const rows = await listStuckRequests();
+    expect(rows.find((r) => r.id === "req_touched")).toMatchObject({ reason: "stale", hint: expect.stringMatching(/closes it as delivered/) });
+    expect(rows.find((r) => r.id === "req_untouched")).not.toHaveProperty("hint");
+  });
 });
 
 describe("getSpendOverview", () => {

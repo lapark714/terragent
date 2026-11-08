@@ -69,7 +69,11 @@ async function renderUpdate(req: RequestRow, text: string): Promise<{ email: Ren
  */
 export async function sendCustomerMessage(a: { requestId: string; kind: CustomerMessageKind; text: string }, actor: string) {
   const req = await requireRequest(a.requestId);
-  if (req.is_free_sample) throw new Error("Free samples and their follow-ups are sent by comms-outreach, not from hello@.");
+  // A monitor follow-up of a free sample reaches comms-customer only once the prospect has replied (outbound/monitors.ts
+  // followupTarget), so that update goes from hello@ like any customer's; everything else about samples is comms-outreach's.
+  if (req.is_free_sample && !(req.source === "monitor" && a.kind === "update")) {
+    throw new Error("Free samples and their follow-ups are sent by comms-outreach, not from hello@.");
+  }
   let email: RenderedEmail;
   let closes = false;
   if (a.kind === "refusal") {
@@ -145,7 +149,7 @@ export async function deliverReport(requestId: string, actor: string) {
   }
   const email = renderReportDelivery({
     customerName: req.customer_name, question: req.question, report: reportForEmail(view),
-    paymentLink: quote?.payment_link ?? null, priceUsd: quote ? num(quote.price_usd) : null,
+    paymentLink: quote?.payment_link ?? null, priceUsd: quote ? num(quote.price_usd) : null, offerMonitoring: !req.monitor_id,
   });
   const sent = await sendToCustomer(req, email, `${req.id}:deliver:${report.id}`, actor);
   await logEvent(sent.status === "sent" ? "report.delivered" : "report.delivery_blocked", actor, { report_id: report.id, ...outcome(sent) }, req.id);

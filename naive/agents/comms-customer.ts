@@ -29,14 +29,22 @@ export const commsCustomer: AgentDefinition = {
         "   - Unclear (unclear_needs_clarification, e.g. no location or no question): terragent.send_customer_message kind clarifying_question with ONE short question; it parks the request as clarifying.\n" +
         "   - Refused (a misuse category) or out_of_scope: record_screening itself ends the request as refused; then terragent.send_customer_message kind refusal with a brief, polite reason (no lecture).\n" +
         "   - A re-screen (the brief says the customer answered our refusal): judge the earlier refused ask and the new detail together; new wording alone never makes a refused purpose acceptable.",
-      "REPLY: if it answers our clarifying question, update the brief and terragent.handoff to planner. If it accepts a quote we sent, " +
-        "terragent.handoff with quote_accepted=true: to analytics (free data) or, when the plan chose paid data, to acquisition so it can request a founder's approval. " +
-        "If a prospect wants a full report, monitoring or a different site, terragent.handoff to planner (new analysis) or pricing (quote for what we already have). " +
-        "A question you can answer without new work (status, payment, the report): terragent.send_customer_message kind update. " +
-        "If they want no more email at all: terragent.record_opt_out (it suppresses the address, notes and cancels the request) and send nothing more; if they mean marketing only, carry on.",
+      "REPLY: screening first. A request whose screening isn't allowed yet (one we asked a clarifying question on, or a prospect reply, which " +
+        "opens a NEW email request) can't be handed off: call terragent.record_screening (allowed, ok) before any handoff.\n" +
+        "   - It answers our clarifying question: record_screening (allowed), then terragent.handoff to planner with the updated brief.\n" +
+        "   - It accepts a quote we sent: terragent.handoff with quote_accepted=true to analytics (free data), to interpreter (stage report) when the plan " +
+        "reuses the Earth index, or to acquisition when the plan chose paid data so it can request a founder's approval.\n" +
+        "   - A prospect reply is a new request with no data spec, plan or quote: new work (a full report, another site or dates) goes to planner, which " +
+        "starts the chain that prices it. To watch the site we already sampled, terragent.create_monitor on the SAMPLE's request id (the brief names it; " +
+        "get_request shows prospect_id), never on the reply request.\n" +
+        "   - A question you can answer without new work (status, payment, the report): terragent.send_customer_message kind update.\n" +
+        "   - If they name a price they would pay (\"we'd pay $300 for this\"), terragent.add_note quoting them with stated_willingness_usd set to that amount.\n" +
+        "   - If they want no more email at all: terragent.record_opt_out (it suppresses the address, notes and cancels the request) and send nothing more; if they mean marketing only, carry on.",
       "QUOTE: terragent.send_quote; it moves the request to quoted.",
       "REPORT: terragent.get_report and check the verifier status is pass (never deliver a report that has not passed). " +
-        "terragent.deliver_report in the same thread; it marks the request delivered. If the customer asked for ongoing checks or accepted monitoring, terragent.create_monitor.",
+        "terragent.deliver_report in the same thread; it marks the request delivered, and the email itself offers monitoring of the site. " +
+        "If the customer already asked for ongoing checks, terragent.create_monitor right after delivery (leave cadence out: the default re-checks every 12 hours); " +
+        "if they accept the offer later, their reply arrives as a follow-up: create_monitor on the delivered request it names.",
       "MONITORING follow-up: write the update from the monitor's new information only (what changed, the scene dates, the image links) and send it with " +
         "terragent.send_customer_message kind update; on a monitoring follow-up that email is the delivery and closes the request. " +
         "If the follow-up has a verified report of its own, use terragent.deliver_report instead.",

@@ -108,7 +108,7 @@ describe("requestFreeSample", () => {
     const res = await requestFreeSample({ prospectId: pro, actor: "sourcing" });
     expect(res).toMatchObject({
       already_requested: false,
-      cap: { playbook: "disasters", weight: 0.5, limit_per_run: 3, started_this_run: 1, limit_today: 6, started_today: 1, limit_today_total: 12, remaining: 2 },
+      cap: { playbook: "disasters", weight: 0.5, limit_per_run: 3, started_this_run: 1, limit_today: 6, started_today: 1, limit_today_total: 12, started_today_total: 1, remaining: 2 },
     });
 
     const arg = mocks.createRequest.mock.calls[0][0];

@@ -177,7 +177,16 @@ function assetImage(report: ReportForEmail) {
 // Customer (hello@)
 // ---------------------------------------------------------------------------
 
-export function renderReportDelivery(a: { customerName?: string | null; question: string; report: ReportForEmail; paymentLink?: string | null; priceUsd?: number | null }): RenderedEmail {
+/** Every delivery offers monitoring of the site (spec §6 pricing); a reply accepting it reaches Comms 2 as a follow-up. */
+export const MONITORING_OFFER =
+  `Want us to keep watching this site? Reply "monitor" and we'll re-check it on each new clear satellite pass and write ` +
+  `when something changes (${usdFmt(PRICING.monitoringPerSiteMonthlyUsd)} per site per month).`;
+
+export function renderReportDelivery(a: {
+  customerName?: string | null; question: string; report: ReportForEmail; paymentLink?: string | null; priceUsd?: number | null;
+  /** Default true; false when the site is already monitored (e.g. a monitoring follow-up's own report). */
+  offerMonitoring?: boolean;
+}): RenderedEmail {
   const r = a.report;
   const price = a.priceUsd
     ? a.paymentLink
@@ -195,6 +204,7 @@ export function renderReportDelivery(a: { customerName?: string | null; question
     r.human_review_recommended ? HUMAN_REVIEW_NOTE : "",
     `Full report with all images and sources: ${r.url}`,
     price,
+    a.offerMonitoring === false ? "" : MONITORING_OFFER,
   ], { images: reportImages(r) });
 }
 

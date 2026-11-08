@@ -27,8 +27,9 @@ const { getGlobeData } = await import("./globe");
 const { getApprovals } = await import("./approvals");
 const { getLiveSnapshot } = await import("./snapshot");
 const { getPublicReport, getRequestProgress, isFileReferenced } = await import("./public");
-const { checkAdminToken, runAdminAction, AdminConflict } = await import("./admin");
-const { invalidateLive } = await import("./rows");
+const { AdminAction, checkAdminToken, runAdminAction, AdminConflict } = await import("./admin");
+const { getMarketPrices } = await import("./market");
+const { invalidateLive, PUBLIC_UNAVAILABLE, redactSecrets } = await import("./rows");
 const sessions = vi.mocked(await import("../naive/sessions"));
 const naiveBoard = vi.mocked(await import("../naive/board"));
 
@@ -121,6 +122,7 @@ describe("dashboard queries on an empty database", () => {
       expect(globe.cells.world).toEqual([]);
       const approvals = await getApprovals();
       expect(approvals.inboxes.map((i) => i.armed)).toEqual([false, false, false]);
+      expect(await getMarketPrices()).toEqual({ rows: [], ourFromUsd: 29 });
     } finally {
       setDb(db);
       await empty.close();
@@ -285,6 +287,64 @@ describe("public dashboard privacy", () => {
       expect(snapshot.board.data.requests.find((r) => r.id === "req_refu")?.question).toBe("Refused under the acceptable use policy");
     }
     if (approvals.naive.state === "ok") expect(approvals.naive.data[0].args).toEqual({ request_id: "req_abcd", note: "# Elm Street" });
+  });
+});
+
+describe("public errors", () => {
+  it("never echo an exception's text: a malformed DATABASE_URL would otherwise publish the password", async () => {
+    // The Neon driver's own wording for a pasted `psql '…'` snippet (FAKE credentials).
+    const leak = "Database connection string provided to neon() is not a valid URL (connection string: psql 'postgresql://neondb_owner:FAKEPASSWORD@ep-fake.neon.tech/neondb')";
+    const broken = { kind: "neon" as const, query: vi.fn(async () => { throw new Error(leak); }), close: async () => {} };
+    const errors = vi.spyOn(console, "error").mockImplementation(() => {});
+    setDb(broken);
+    try {
+      const snapshot = await getLiveSnapshot();
+      for (const p of [snapshot.overview, snapshot.funnel, snapshot.board, snapshot.decisions, snapshot.money, snapshot.interventions, snapshot.allocation, snapshot.activity]) {
+        expect(p).toEqual({ ok: false, error: PUBLIC_UNAVAILABLE });
+      }
+      expect(JSON.stringify(snapshot)).not.toMatch(/FAKEPASSWORD|neondb_owner|connection string/);
+      expect(errors).toHaveBeenCalled(); // the real error still reaches the server log
+    } finally {
+      setDb(db);
+      errors.mockRestore();
+    }
+  });
+
+  it("say only 'unavailable' when Naïve fails, on the board and the approvals queue", async () => {
+    vi.stubEnv("NAIVE_API_KEY", "sk_test");
+    const errors = vi.spyOn(console, "error").mockImplementation(() => {});
+    naiveBoard.listCards.mockRejectedValueOnce(new Error("401 for key sk_live_FAKEKEY1234567890 at https://api.vetta.sh"));
+    sessions.listPendingApprovals.mockRejectedValueOnce(new Error("401 for key sk_live_FAKEKEY1234567890"));
+    try {
+      expect((await getBoard()).naive).toEqual({ state: "error", message: PUBLIC_UNAVAILABLE });
+      expect((await getApprovals()).naive).toEqual({ state: "error", message: PUBLIC_UNAVAILABLE });
+    } finally {
+      errors.mockRestore();
+    }
+  });
+
+  it("redacts connection strings and keys where a founder-only message must carry an error", () => {
+    expect(redactSecrets("not a valid URL (connection string: psql 'postgresql://neondb_owner:pw@ep-x.neon.tech/neondb')"))
+      .toBe("not a valid URL (connection string: psql 'postgresql://***@ep-x.neon.tech/neondb')");
+    expect(redactSecrets("bad key sk_live_abcdef123456 and postgres://u:p@h/db")).toBe("bad key sk_live_*** and postgres://***@h/db");
+    expect(redactSecrets("relation \"requests\" does not exist")).toBe("relation \"requests\" does not exist");
+  });
+});
+
+describe("market prices", () => {
+  it("lists cited prices by playbook and links only http(s) sources", async () => {
+    await q(`INSERT INTO market_prices (id, playbook, alternative, price_low, price_high, unit, turnaround, source_title, source_url, retrieved_at) VALUES
+             ('mkt_2', 'mining', 'Drone stockpile survey', 800, 2500, 'per survey', null, 'Survey prices', 'https://example.org/survey', '2026-11-06'),
+             ('mkt_1', 'disasters', 'Drone roof inspection', 250, null, 'per site', '2–5 days', 'Roof inspection costs', 'https://example.org/roof', '2026-11-07'),
+             ('mkt_3', 'disasters', 'Adjuster visit', null, 900, 'per site', null, 'A bad link', 'javascript:alert(1)', '2026-11-07')`);
+    const m = await getMarketPrices();
+    expect(m.ourFromUsd).toBe(29);
+    expect(m.rows.map((r) => r.id)).toEqual(["mkt_3", "mkt_1", "mkt_2"]); // disasters first, then mining
+    expect(m.rows[1]).toEqual({
+      id: "mkt_1", playbook: "disasters", alternative: "Drone roof inspection", low: 250, high: null, unit: "per site", turnaround: "2–5 days",
+      sourceTitle: "Roof inspection costs", sourceUrl: "https://example.org/roof", retrievedAt: "2026-11-07",
+    });
+    expect(m.rows[0].sourceUrl).toBeNull();
   });
 });
 
@@ -472,6 +532,55 @@ describe("admin actions", () => {
     const [tpl] = await q("SELECT status, approved_by FROM templates WHERE id = 'tpl_1'");
     expect(tpl).toEqual({ status: "approved", approved_by: "Aarush" });
     await expect(runAdminAction({ action: "template", template_id: "tpl_1", decision: "retire", actor: "Aarush", reason: "again" })).rejects.toBeInstanceOf(AdminConflict);
+  });
+
+  it("records a payment once, linked to the request's quote, with one intervention", async () => {
+    await q(`INSERT INTO requests (id, source, playbook, status, question, prospect_id, quote_id, price_usd) VALUES
+             ('req_paying0001', 'email', 'disasters', 'delivered', 'Did the yard flood?', 'pro_1', 'qte_pay1', 45)`);
+    await q(`INSERT INTO quotes (id, request_id, price_usd, status, auto_approved) VALUES ('qte_pay1', 'req_paying0001', 45, 'accepted', false)`);
+    await q(`INSERT INTO revenue (request_id, quote_id, amount_usd, kind, note) VALUES ('req_paying0001', 'qte_pay1', 45, 'committed', 'Customer accepted the quote')`);
+    const committed = async () => (await getMoney()).revenue.committed;
+    const committedBefore = await committed();
+    const before = await interventionCount();
+    const paidBefore = (await getMoney()).revenue.paid;
+    const funnelPaid = async () => (await getFunnel()).find((f) => f.key === "paid")!.byPlaybook.disasters;
+    const paidStageBefore = await funnelPaid();
+    const pay = (request_id: string, amount_usd = 45) =>
+      runAdminAction({ action: "payment", request_id, amount_usd, actor: "Aiden", reason: "Paid through the Stripe link" });
+
+    // The short id the public dashboard shows is enough when only one request has it.
+    expect(await pay("req_payi")).toEqual({ done: "Recorded a $45 payment for req_payi." });
+    // The accepted quote's committed $45 is now paid, so it no longer counts as committed too.
+    expect(await q("SELECT request_id, quote_id, amount_usd::float8 AS usd, kind FROM revenue WHERE request_id = 'req_paying0001'")).toEqual([
+      { request_id: "req_paying0001", quote_id: "qte_pay1", usd: 45, kind: "paid" },
+    ]);
+    expect(await committed()).toBe(committedBefore - 45);
+    expect(await q("SELECT actor, action, request_id, ref_id FROM interventions WHERE action = 'record_payment'")).toEqual([
+      { actor: "Aiden", action: "record_payment", request_id: "req_paying0001", ref_id: "qte_pay1" },
+    ]);
+    expect(await q("SELECT actor FROM events WHERE type = 'payment.recorded' AND request_id = 'req_paying0001'")).toEqual([{ actor: "human:Aiden" }]);
+    expect(await q("SELECT status FROM prospects WHERE id = 'pro_1'")).toEqual([{ status: "paid" }]);
+    expect((await getMoney()).revenue.paid).toBe(paidBefore + 45);
+    expect(await funnelPaid()).toBe(paidStageBefore + 1);
+
+    // A double click is refused and logs nothing more; a different amount is a second payment.
+    await expect(pay("req_paying0001")).rejects.toBeInstanceOf(AdminConflict);
+    expect(await interventionCount()).toBe(before + 1);
+    expect(await pay("req_paying0001", 10)).toEqual({ done: "Recorded a $10 payment for req_payi (the quoted price was $45)." });
+    expect(await interventionCount()).toBe(before + 2);
+  });
+
+  it("refuses a payment it can't tie to exactly one request, and bad amounts", async () => {
+    await q(`INSERT INTO requests (id, source, question) VALUES ('req_ambi000001', 'portal', 'One?'), ('req_ambi000002', 'portal', 'Two?')`);
+    const before = await interventionCount();
+    const pay = (request_id: string) => runAdminAction({ action: "payment", request_id, amount_usd: 29, actor: "Aiden", reason: "Paid by card" });
+    await expect(pay("req_ambi")).rejects.toThrow(/More than one request starts with req_ambi/);
+    await expect(pay("req_zzzz99999")).rejects.toThrow(/No request req_zzzz99999/);
+    expect(await interventionCount()).toBe(before);
+    const parse = (body: Record<string, unknown>) => AdminAction.safeParse({ action: "payment", request_id: "req_ambi000001", actor: "Aiden", reason: "Paid", ...body }).success;
+    expect(parse({ amount_usd: 29 })).toBe(true);
+    for (const amount_usd of [0, -5, "29", 1e9]) expect(parse({ amount_usd })).toBe(false);
+    expect(parse({ amount_usd: 29, request_id: "qte_pay1" })).toBe(false);
   });
 
   it("arms inboxes one flag at a time and refuses a repeat", async () => {

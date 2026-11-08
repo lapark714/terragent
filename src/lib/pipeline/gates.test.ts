@@ -95,6 +95,13 @@ describe("founder approval above the cap", () => {
     const [q] = await (await getDb()).query<{ status: string }>("SELECT status FROM quotes WHERE id = $1", [quote.id]);
     expect(q.status).toBe("accepted");
     expect((await getAnalysisJob(req.id)).job.request_id).toBe(req.id);
+
+    // The acceptance is committed revenue at the quote's price (the coordinator's value input, the money panel), once.
+    const revenue = () => getDb().then((db) => db.query<{ kind: string; amount_usd: string; request_id: string }>(
+      "SELECT kind, amount_usd, request_id FROM revenue WHERE quote_id = $1", [quote.id]));
+    expect(await revenue()).toEqual([{ kind: "committed", amount_usd: Number(quote.price_usd).toFixed(2), request_id: req.id }]);
+    await handoff({ requestId: req.id, from: "comms-customer", to: "interpreter", stage: "report", instructions: "Retry with the same acceptance", quoteAccepted: true });
+    expect(await revenue()).toHaveLength(1);
   });
 
   it("an Earth-index answer can't skip pricing on its way to the interpreter", async () => {

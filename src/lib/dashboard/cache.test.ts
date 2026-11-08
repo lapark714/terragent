@@ -7,10 +7,11 @@ vi.mock("../naive/board", () => ({ listCards: vi.fn(async () => []) }));
 vi.mock("../naive/spend", () => ({ getSpendSummary: vi.fn(async () => ({ total_usd: 0, by_agent: {}, balance_usd: 0 })) }));
 vi.mock("../naive/sessions", () => ({ listPendingApprovals: vi.fn(async () => []), decideApproval: vi.fn(async () => {}) }));
 
-const { cached, cachedLiveSnapshot, cachedOverview, DASHBOARD_TTL_MS, invalidateDashboard } = await import("./cache");
+const { cached, cachedLiveSnapshot, cachedMarket, cachedOverview, DASHBOARD_TTL_MS, invalidateDashboard, MARKET_TTL_MS } = await import("./cache");
 const { DB_PAUSE_MS, isDbPaused, isDbSuspendedError, resetDbPause } = await import("./rows");
 const { GET: overviewRoute } = await import("@/app/api/dashboard/overview/route");
 const { GET: globeRoute } = await import("@/app/api/dashboard/globe/route");
+const { GET: marketRoute } = await import("@/app/api/dashboard/market/route");
 
 let db: Db;
 
@@ -71,6 +72,26 @@ describe("dashboard cache", () => {
     await Promise.all(Array.from({ length: 20 }, () => cachedLiveSnapshot()));
     expect(spy.mock.calls.length).toBe(perSnapshot); // the second wave read nothing
     spy.mockRestore();
+  });
+});
+
+describe("market prices", () => {
+  it("are read at most once per ten minutes, and pause with the database", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    const spy = vi.spyOn(db, "query");
+    const res = await marketRoute();
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ ok: true, data: { rows: [], ourFromUsd: 29 }, dbSuspended: false });
+    await Promise.all(Array.from({ length: 10 }, () => cachedMarket()));
+    expect(spy).toHaveBeenCalledTimes(1);
+    vi.advanceTimersByTime(MARKET_TTL_MS - 1000);
+    await cachedMarket();
+    expect(spy).toHaveBeenCalledTimes(1);
+    spy.mockRestore();
+
+    invalidateDashboard();
+    setDb(failingDb("Your project has exceeded the compute time quota.").db);
+    expect(await cachedMarket()).toMatchObject({ ok: false, suspended: true, dbSuspended: true });
   });
 });
 

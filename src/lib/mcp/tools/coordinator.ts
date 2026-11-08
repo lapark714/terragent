@@ -40,8 +40,11 @@ export function register(registrar: ToolRegistrar): void {
     "list_stuck_requests",
     {
       stale_minutes: z.number().int().min(5).max(7 * 24 * 60).optional().describe("no update for this long counts as stuck (default 60)"),
+      failed_within_hours: z.number().int().min(1).max(7 * 24).optional().describe("list failed requests that failed this recently (default 24)"),
       limit: z.number().int().min(1).max(100).optional(),
     },
-    async (a) => ({ requests: await listStuckRequests({ staleMinutes: a.stale_minutes, limit: a.limit }) }),
+    async (a) => ({
+      requests: await listStuckRequests({ staleMinutes: a.stale_minutes, failedWithinHours: a.failed_within_hours, limit: a.limit }),
+    }),
   );
 }

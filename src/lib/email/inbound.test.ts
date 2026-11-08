@@ -172,7 +172,7 @@ describe("routing matrix", () => {
   });
 
   it("reply to outreach → prospect replied + warm, request for Comms 2; next reply continues that request", async () => {
-    await db.query("INSERT INTO prospects (id, playbook, company, contact_email, status) VALUES ('pro_1', 'disasters', 'Acme Storage', 'pat@acme.com', 'emailed')");
+    await db.query("INSERT INTO prospects (id, playbook, company, contact_email, status, sample_request_id) VALUES ('pro_1', 'disasters', 'Acme Storage', 'pat@acme.com', 'emailed', 'req_s1')");
     await db.query("INSERT INTO messages (id, direction, inbox, prospect_id, counterpart_email, thread_id, status, kind) VALUES ('msg_t', 'outbound', 'outreach', 'pro_1', 'pat@acme.com', 'thr-o', 'sent', 'outreach')");
     const outreachReply = (id: string) => reply("Interesting, what would monitoring cost?", { inbox_id: "terragent-outreach@agentmail.to", thread_id: "thr-o", message_id: id });
 
@@ -182,6 +182,10 @@ describe("routing matrix", () => {
       source: "email", prospectId: "pro_1", company: "Acme Storage", playbook: "disasters", threadId: "thr-o", inbox: "outreach", priority: "inbound",
     }));
     expect(mocks.handoff).toHaveBeenCalledWith(expect.objectContaining({ requestId: out.requestId, to: "comms-customer", stage: "prospect_reply" }));
+    // The new request needs screening and has no spec: the brief says so, and names the sample to monitor.
+    expect(briefOf().instructions).toMatch(/record_screening \(allowed\) before any handoff/);
+    expect(briefOf().instructions).toContain("create_monitor on req_s1");
+    expect(mocks.createRequest).toHaveBeenCalledWith(expect.objectContaining({ meta: { origin: "prospect_reply", sample_request_id: "req_s1" } }));
     const [p] = await db.query<{ status: string; warm: boolean }>("SELECT status, warm FROM prospects WHERE id = 'pro_1'");
     expect(p).toEqual({ status: "replied", warm: true });
 
@@ -223,6 +227,9 @@ describe("routing matrix", () => {
     expect(mocks.upsertCard).toHaveBeenCalledWith(expect.objectContaining({ key: "order:ord_1", assignee: "comms-suppliers", status: "todo" }));
     expect(mocks.handoff).not.toHaveBeenCalled();
     expect((await messageRows())[0].order_id).toBe("ord_1");
+    // The card's ref stays on the order, so record_supplier_quote can close it and its woken session maps to the request.
+    const [order] = await db.query<{ meta: { card: Record<string, unknown> } }>("SELECT meta FROM orders WHERE id = 'ord_1'");
+    expect(order.meta.card).toMatchObject({ key: "order:ord_1", title: "Supplier reply on order ord_1", id: "card_1", body: expect.stringMatching(/record_supplier_quote/) });
   });
 
   it("supplier reply on data@ never matches the customer request the quote was for", async () => {

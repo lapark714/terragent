@@ -226,16 +226,22 @@ async function applyRoute(m: InboundEmail, inbox: Inbox, route: Route, messageRo
       await suppress(facts.from, "opt_out", SYSTEM);
       await logEvent("email.opted_out", SYSTEM, { ...facts, prospect_id: route.prospectId }, route.requestId);
       return route.requestId;
-    case "supplier":
+    case "supplier": {
       await logEvent("email.received", SYSTEM, { ...facts, order_id: route.orderId }, route.requestId);
-      await upsertCard({
+      const card = {
         key: `order:${route.orderId}`,
         title: `Supplier reply on order ${route.orderId}`,
         body: `${instructions(m, inbox, m.security.verdict)} Record any price, terms and delivery time with record_supplier_quote (order ${route.orderId}).`,
-        assignee: "comms-suppliers",
-        status: "todo",
-      });
+      };
+      const view = await upsertCard({ ...card, assignee: "comms-suppliers", status: "todo" });
+      // Kept on the order so record_supplier_quote / send_supplier_email can close it (comms-suppliers can't write the
+      // board), and so the session the card wakes can be traced back to the request.
+      const db = await getDb();
+      await db.query("UPDATE orders SET meta = meta || $2::jsonb, updated_at = now() WHERE id = $1", [
+        route.orderId, JSON.stringify({ card: { ...card, id: view?.id ?? null } }),
+      ]);
       return route.requestId;
+    }
     case "request":
       await logEvent("email.received", SYSTEM, facts, route.requestId);
       return continueRequest(m, inbox, route, messageRowId);
@@ -320,18 +326,26 @@ async function rescreenAfterRefusal(m: InboundEmail, inbox: Inbox, route: Extrac
 
 async function continueProspect(m: InboundEmail, inbox: Inbox, route: Extract<Route, { kind: "prospect" }>, messageRowId: string): Promise<string> {
   const db = await getDb();
-  await db.query(
+  const [p] = await db.query<{ sample_request_id: string | null }>(
     `UPDATE prospects SET warm = true, updated_at = now(),
        status = CASE WHEN status IN ('matched', 'sample_requested', 'sample_ready', 'emailed') THEN 'replied' ELSE status END
-     WHERE id = $1`,
+     WHERE id = $1 RETURNING sample_request_id`,
     [route.prospectId],
   );
+  const opened = !route.requestId;
   const requestId = route.requestId ?? (await newRequest(m, inbox, {
-    company: route.company.slice(0, 200), playbook: route.playbook, prospectId: route.prospectId, meta: { origin: "prospect_reply" },
+    company: route.company.slice(0, 200), playbook: route.playbook, prospectId: route.prospectId,
+    meta: { origin: "prospect_reply", ...(p?.sample_request_id ? { sample_request_id: p.sample_request_id } : {}) },
   }));
   await logEvent("prospect.replied", SYSTEM, { prospect_id: route.prospectId, inbox, thread_id: m.threadId }, requestId);
+  const sample = p?.sample_request_id
+    ? ` Their free sample is request ${p.sample_request_id}: to watch that site, create_monitor on ${p.sample_request_id} (this request has no data spec).`
+    : "";
+  const fresh = opened
+    ? " This reply opened a new request: record_screening (allowed) before any handoff; new work (a full report, another site or dates) goes to planner."
+    : "";
   return toComms2(m, inbox, requestId, messageRowId, "prospect_reply",
-    `This is a reply from outreach prospect ${route.prospectId} (${route.company}), who got a free sample report: answer, quote and sell as for any customer.`);
+    `This is a reply from outreach prospect ${route.prospectId} (${route.company}), who got a free sample report: answer, quote and sell as for any customer.${fresh}${sample}`);
 }
 
 async function newRequest(

@@ -17,8 +17,10 @@ export const commsSuppliers: AgentDefinition = {
       "New quote request: terragent.send_supplier_email in the order's thread. Ask for: price for the AOI (area in km², centre coordinates), product and resolution, " +
         "archive or tasking with the date window, minimum order, delivery time, and licence terms for sharing derived results (maps, measurements) with an end customer. " +
         "Then terragent.add_note on the request: who was asked, for what.",
-      "Supplier reply: read it with terragent.get_thread, then terragent.record_supplier_quote (price, currency, terms, delivery, licence) and terragent.handoff to acquisition with the numbers.",
-      "Unclear reply: one short follow-up question in the same thread, then terragent.add_note.",
+      "Supplier reply: read it with terragent.get_thread, then terragent.record_supplier_quote (price, currency, terms, delivery, licence); it closes the reply's board card. " +
+        "Its result says whether the request is still open: if so, terragent.handoff to acquisition with the numbers; if it has finished (the request usually " +
+        "goes ahead on free data without waiting), terragent.add_note on it with the quote instead, since a finished request can't be handed off.",
+      "Unclear reply: one short follow-up question in the same thread with terragent.send_supplier_email (it closes the reply's card), then terragent.add_note.",
     ],
     rules: [
       "Identify as Terragent's procurement agent, an AI agent, on behalf of Terragent. Professional and brief.",
@@ -28,7 +30,7 @@ export const commsSuppliers: AgentDefinition = {
       ...PIPELINE_RULES,
     ],
     finish:
-      "End with terragent.handoff to acquisition when a supplier answered, otherwise with terragent.add_note. Never change the request's status: " +
-      "the request moves on without waiting for suppliers.",
+      "End with terragent.handoff to acquisition when a supplier answered and the request is still open, otherwise with terragent.add_note. " +
+      "Never change the request's status: the request moves on without waiting for suppliers.",
   }),
 };

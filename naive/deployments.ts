@@ -71,6 +71,17 @@ export const DEPLOYMENTS: readonly DeploymentSpec[] = [
       "with terragent.record_monitor_check. Stop when none are left.",
   },
   {
+    key: "outreach-followups",
+    agent: "comms-outreach",
+    cron: "15 1,7,13,19 * * *",
+    window: AGENT_BUDGETS["comms-outreach"].window,
+    prompt:
+      "Follow-up run [tg:outreach-followups]\n" +
+      "No request: start with terragent.list_followups (only prospects with NEW information: a new clear image or a detected change). " +
+      "For each item send ONE terragent.send_outreach_email kind=followup carrying its new_info; never a plain reminder, and skip anyone " +
+      "list_followups doesn't return. End with terragent.log_decision kind outreach: who was contacted, who was blocked and why.",
+  },
+  {
     key: "market-research",
     agent: "market-researcher",
     cron: "0 9 * * *",

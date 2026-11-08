@@ -1,7 +1,7 @@
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { createDb, setDb, type Db } from "../db/client";
 import { migrate } from "../db/migrate";
-import { apiKeyFromRequest, clientIp, createApiKey, generateKey, hashKey, hitRateLimit, rateLimitHeaders, verifyApiKey } from ".";
+import { apiKeyFromRequest, clientIp, createApiKey, generateKey, hashKey, hitMemoryLimit, hitRateLimit, rateLimitHeaders, verifyApiKey } from ".";
 
 let db: Db;
 beforeAll(async () => {
@@ -72,6 +72,19 @@ describe("rate limiter", () => {
     expect(r.count).toBe(1);
     const rows = await db.query("SELECT 1 FROM rate_limits WHERE bucket = 'ip:9.9.9.9'");
     expect(rows).toHaveLength(1);
+  });
+
+  it("has an in-memory variant for public reads: fixed window, per bucket, no database write", async () => {
+    const t0 = 1_000_000;
+    const spy = vi.spyOn(db, "query");
+    const hits = Array.from({ length: 4 }, () => hitMemoryLimit("status:1.1.1.1", 3, 60_000, t0));
+    expect(hits.map((r) => r.allowed)).toEqual([true, true, true, false]);
+    expect(hits[3]).toMatchObject({ count: 4, remaining: 0, resetSeconds: 60 });
+    expect(hitMemoryLimit("status:2.2.2.2", 3, 60_000, t0).allowed).toBe(true);
+    expect(hitMemoryLimit("status:1.1.1.1", 3, 60_000, t0 + 59_000)).toMatchObject({ allowed: false, resetSeconds: 1 });
+    expect(hitMemoryLimit("status:1.1.1.1", 3, 60_000, t0 + 60_000)).toMatchObject({ allowed: true, count: 1 });
+    expect(spy).not.toHaveBeenCalled();
+    spy.mockRestore();
   });
 
   it("takes the first forwarded hop as the client IP", () => {
