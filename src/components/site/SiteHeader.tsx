@@ -13,7 +13,8 @@ export function SiteHeader({ overlay = false, home = "/" }: { overlay?: boolean;
       <Link href={home} aria-label="Terragent home" className="text-fg">
         <LogoLockup className="h-7 sm:h-8" label="" />
       </Link>
-      <nav aria-label="Main" className="flex items-center gap-5 text-sm text-fg-2">
+      {/* Hidden while the landing's ask sheet is open (GlobeAsk sets <html data-asking>): it would sit on the sheet. */}
+      <nav aria-label="Main" className="flex items-center gap-5 text-sm text-fg-2 transition-[opacity,visibility] duration-300 in-data-asking:invisible in-data-asking:opacity-0">
         {NAV.map((n) => (
           <Link key={n.hash} href={`${home}${n.hash}`} className={`hover:text-fg ${n.hash === "#api" ? "hidden sm:inline" : ""}`}>
             {n.label}
