@@ -6,7 +6,7 @@
  * server key must not be able to mint keys or top up the card. Scripts may use `naive()` directly.
  */
 import { createClient, type VettaClient } from "@usenaive-sdk/managed-agents";
-import { env, isOffline, requireEnv } from "../env";
+import { env, envNumber, isOffline, requireEnv } from "../env";
 
 export type Naive = VettaClient;
 
@@ -22,13 +22,37 @@ export function naiveBaseUrl(): string {
   return (env("NAIVE_BASE_URL") ?? "https://api.vetta.sh").replace(/\/+$/, "");
 }
 
+/**
+ * Naïve answers 429 ("the service is at capacity") and 503 under load — common during the hackathon. Back off and
+ * retry, honouring Retry-After. Safe for writes: the SDK sends one Idempotency-Key per call in the headers, and a
+ * retry re-sends the same headers and (string / FormData / bytes) body, so the server applies a write at most once.
+ */
+export function retryingFetch(
+  base: typeof fetch = (input, init) => globalThis.fetch(input, init),
+  opts: { tries?: number; baseMs?: number; maxMs?: number; sleep?: (ms: number) => Promise<void> } = {},
+): typeof fetch {
+  const tries = opts.tries ?? envNumber("NAIVE_RETRY_TRIES", 5);
+  const baseMs = opts.baseMs ?? 800;
+  const maxMs = opts.maxMs ?? 8_000;
+  const sleep = opts.sleep ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)));
+  return async (input, init) => {
+    for (let attempt = 1; ; attempt++) {
+      const res = await base(input, init);
+      if ((res.status !== 429 && res.status !== 503) || attempt >= tries) return res;
+      const retryAfter = Number(res.headers.get("retry-after"));
+      const backoff = Math.min(baseMs * 2 ** (attempt - 1), maxMs) * (0.75 + Math.random() * 0.5);
+      await res.body?.cancel().catch(() => {});
+      await sleep(Number.isFinite(retryAfter) && retryAfter > 0 ? Math.min(retryAfter * 1000, maxMs) : backoff);
+    }
+  };
+}
+
 /** Raw client, no scope check. Use in scripts; runtime code should use getNaive(). */
 export function naive(): VettaClient {
-  client ??= createClient({ apiKey: requireEnv("NAIVE_API_KEY"), baseUrl: naiveBaseUrl() });
+  client ??= createClient({ apiKey: requireEnv("NAIVE_API_KEY"), baseUrl: naiveBaseUrl(), fetch: retryingFetch() });
   return client;
 }
 
-/** Client for runtime code: on Vercel, the key's scopes are checked once per process first. */
 /** Thrown instead of reaching Naïve in offline mode (npm run dev:local / TERRAGENT_OFFLINE=1). */
 export class NaiveOfflineError extends Error {
   constructor() {
@@ -38,6 +62,7 @@ export class NaiveOfflineError extends Error {
 }
 
 /**
+ * Client for runtime code: on Vercel, the key's scopes are checked once per process first.
  * The only way code reaches Naïve. Offline mode is enforced HERE as a backstop, so no path (board cards,
  * files, sessions, spend, approvals — present or future) can touch the production org from a local run
  * that happens to have real keys in .env. Callers that should degrade gracefully check isOffline() first.
