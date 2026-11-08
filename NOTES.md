@@ -58,6 +58,11 @@ _This table is refreshed after platform research; see docs/platform/README.md fo
   saved (src/lib/pipeline/preconditions.ts; `human:*` senders exempt), and the policy confirms turn-ending calls first
   and `log_decision` last. `scope: "session"` is not used: our parks are `read_people` cards, which offer no grant.
   Browser `signup`/`login` and any `ask_actions` entry are now held for a founder; before this they could auto-confirm.
+- **2026-11-08 — Crons on (7 Naïve deployments, America/Los_Angeles): 3 sourcing sweeps, coordinator review, monitors,
+  outreach follow-ups, market research.** Cold email stays blocked by `missing_postal_address` until a founder supplies a
+  real one; contact-form outreach is on. Pause with `deployments.pause` / the Naïve console. Known gap found in testing
+  (req_mcay6fqpru, Folsom Lake): the pipeline reads one Sentinel-2 tile, so an area crossing a tile boundary is partly
+  blank and the report says so at Low confidence.
 - **2026-11-08 — Analytics runs server-side (`terragent.run_analysis`).** The flag refuses bash, so the backend runs the
   pipeline on its own Naïve computer `terragent-pipeline`, uploads the images and saves the result (or records the
   monitor re-check). Analytics has no computer tools any more.
@@ -166,6 +171,7 @@ _This table is refreshed after platform research; see docs/platform/README.md fo
 | When | Service | Amount | Running total | Note |
 |---|---|---|---|---|
 | 2026-11-07 | Naïve | $0 | **balance $250.86** (`GET /v1/credits/balance` = 250,855,107 micro-USD) | key checks only; no agents created yet |
+| 2026-11-08 09:05 UTC | Naïve | ~$4.44 total since start | **balance $246.42** | includes 3 full test requests (about $1 each). Crons turned on at this point: at most ~$43/day if every run hits its per-run cap |
 | 2026-11-07 | Monid | $0 | $0 spent; **wallet $20.00** | balance re-checked (free call) |
 | 2026-11-07 | Neon | $0 | $0 of $250 credits used (both projects 0 CU-s at claim) | claimed into org `terragent`; worst case capped at $35.60 per billing period (H4c) |
 
