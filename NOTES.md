@@ -39,6 +39,15 @@ _This table is refreshed after platform research; see docs/platform/README.md fo
 
 ## Decisions
 
+- **2026-11-08 02:10 UTC — Outside outreach agent contained (Laurence: keep it, never send more, record every response).**
+  An agent `terragent-outreach` (agt_zx12…, Sonnet 5), set up outside this repo with the admin key, sent **62 cold emails to
+  62 businesses** 00:59–01:30 UTC from `outreach@terragent-qqhrnj.usenaive.ai` (free Naïve system domain), bypassing our
+  gates. They carried an AI disclosure, a Stanford street address and a reply-stop opt-out, but no "commercial message" line.
+  Done: `email.send` → **deny** (agent v3) and inbox **wake off** (replies are stored by Naïve, no agent auto-answers).
+  Nothing deleted; CAN-SPAM needs the inbox working ≥ 30 days after the last send (keep it until ≥ 2026-12-08).
+  To do: our server syncs that inbox into `messages` (every reply recorded; "stop" → suppression), and the 62 sends are
+  back-filled as first touches so no business is cold-emailed twice. Founder to confirm the Stanford address is real mail.
+
 - **2026-11-08 — Email stack change (Laurence): cold outbound moves to a Naïve agent's identity email; AgentMail = intake + replies.**
   AgentMail's terms forbid cold outreach, so cold emails will be sent from a Naïve identity inbox owned by comms-outreach,
   and AgentMail keeps what it allows: people who write to us first (hello@), supplier threads (data@) and replies. Being
