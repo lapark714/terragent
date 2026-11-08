@@ -13,7 +13,10 @@
     "db:migrate": "tsx scripts/migrate.ts",
     "provision:agentmail": "tsx scripts/provision-agentmail.ts",
     "db:status": "tsx scripts/db-status.ts",
-    "test:live": "vitest run --config vitest.live.config.mts"
+    "test:live": "vitest run --config vitest.live.config.mts",
+    "pipeline": "tsx scripts/pipeline.ts",
+    "bundle:pipeline": "tsx scripts/bundle-pipeline.ts",
+    "test:pipeline": "bash pipeline/bootstrap.sh --dev >/dev/null && pipeline/.venv/bin/python -m pytest -q pipeline/tests"
   },
   "dependencies": {
     "@modelcontextprotocol/server": "^2.4.0",
