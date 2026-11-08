@@ -30,3 +30,9 @@ Top problems, ranked: 11.4 s of near-frozen holds against a 2 s budget; dimmed g
 Measured on the render: exactly 60.000 s, 3600 frames; near-frozen 0.6 s (budget 2 s), no run over 0.5 s; slam inside the safe margin (x 197–1724). Sound-off read passed, 12 askable things retellable.
 
 Remaining, ranked: thesis line 1.15 s (needs 1.5 s); "Yes, please check." unreadable; factory roofs drawn at about 100% growth against "+18%"; vineyard sweep 16 frames late; compounding beat hidden; flood imagery not radar-like; fields read as dots; agent counter ahead of its ticks; ghost labels at 18.5–21 s; lockup thud before the pin arrives. All accepted.
+
+## Round 4 (render r4): ship
+
+No must-fix items. All nine changed passages checked at full resolution. Picture only: no reviewer could listen to the audio; sync was measured from the sfx stem (73 of 98 onsets within 1 frame, the rest judged measurement artefacts on swells and tails).
+
+Nice-to-have, not done: index growth is brief at 23.55–23.85 s; exit residue at 24.70–24.95 s; pin briefly crosses the "What you could ask" title at 30.40–30.50 s; port and coast tiles in the rapid grid are natural-colour; "Yes, please check." holds about 0.7 s at full opacity against a 0.9 s target.
