@@ -8,7 +8,6 @@ import type { Approvals, LiveSnapshot, MarketResponse } from "@/lib/dashboard/ty
 import { count, usd } from "../../format";
 import { Wordmark } from "../../site/Wordmark";
 import { usePoll } from "../../usePoll";
-import { useNow } from "../../useNow";
 import { keepLastGood } from "../keepLastGood";
 import { Panel, PanelData, Quiet } from "../Panel";
 import { DealsPanel } from "./DealsPanel";
@@ -47,7 +46,6 @@ export function SalesConsole({ initialLive, initialApprovals, initialMarket }: {
   initialApprovals: Approvals | null;
   initialMarket: MarketResponse | null;
 }) {
-  const now = useNow();
   const live = usePoll<LiveSnapshot>("/api/dashboard/live", 6_000, initialLive, keepLastGood);
   const suspended = live.data?.dbSuspended === true;
   const approvals = usePoll<Approvals>("/api/dashboard/approvals", suspended ? PAUSED_POLL_MS : 10_000, initialApprovals);
@@ -66,23 +64,9 @@ export function SalesConsole({ initialLive, initialApprovals, initialMarket }: {
   return (
     <div className="flex flex-col gap-2 pb-2">
       <header className="flex flex-col gap-2.5 px-2 pt-3">
-        <div className="flex flex-wrap items-center justify-between gap-x-6 gap-y-2 px-2">
-          <div className="flex flex-wrap items-center gap-x-5 gap-y-2">
-            <Wordmark suffix="Business" />
-            <Nav />
-          </div>
-          <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5">
-            {s?.offline && (
-              <span className="rounded-full border border-line-strong px-2.5 py-0.5 text-xs text-fg-2" title="npm run dev:local: demo database, and no Naïve, AgentMail or Monid calls">
-                Local demo data · run by AI agents, which are off here
-              </span>
-            )}
-            <p className="flex items-center gap-2 text-xs text-fg-2" role="status">
-              <span className={`size-2 rounded-full ${live.error ? "bg-alert" : "beacon bg-forest text-forest"}`} aria-hidden />
-              {live.error ? "Reconnecting" : "Live"}
-              {now && live.updatedAt && <span className="text-fg-3 tabular-nums">updated {Math.max(0, Math.round((now - live.updatedAt) / 1000))}s ago</span>}
-            </p>
-          </div>
+        <div className="flex flex-col items-start gap-2.5 px-2">
+          <Wordmark />
+          <Nav />
         </div>
 
         <dl className="instrument grid-cols-2 overflow-hidden rounded-lg sm:grid-cols-3 xl:grid-cols-6" aria-label="Business overview">

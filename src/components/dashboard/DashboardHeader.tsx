@@ -7,7 +7,6 @@ import Link from "next/link";
 import type { Money, Overview, Panel } from "@/lib/dashboard/types";
 import { count, duration, usd } from "../format";
 import { Wordmark } from "../site/Wordmark";
-import { useNow } from "../useNow";
 
 function Kpi({ label, value, note, human, accent }: {
   label: string;
@@ -31,41 +30,25 @@ function Kpi({ label, value, note, human, accent }: {
 
 const pct = (n: number, of: number) => (of > 0 ? `${Math.round((n / of) * 100)}%` : "–");
 
-export function DashboardHeader({ overview, money, offline, updatedAt, error }: {
+export function DashboardHeader({ overview, money, offline }: {
   overview: Panel<Overview> | undefined;
   money: Panel<Money> | undefined;
   offline: boolean;
   updatedAt: number | null;
   error: string | null;
 }) {
-  const now = useNow();
   const o = overview?.ok ? overview.data : null;
   const m = money?.ok ? money.data : null;
-  const fresh = !error;
   const dash = "–";
 
   return (
     <header className="flex flex-col gap-2.5 px-2 pt-3">
-      <div className="flex flex-wrap items-center justify-between gap-x-6 gap-y-2 px-2">
-        <div className="flex flex-wrap items-center gap-x-5 gap-y-2">
-          <Wordmark suffix="Mission control" />
-          <nav aria-label="Dashboard" className="flex items-center gap-1 rounded-full border border-line-strong p-0.5 text-xs">
-            <span aria-current="page" className="rounded-full bg-raised px-3 py-1 text-fg">Mission control</span>
-            <Link href="/dashboard/sales" className="rounded-full px-3 py-1 text-fg-2 transition-colors hover:text-fg">Business</Link>
-          </nav>
-        </div>
-        <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5">
-          {offline && (
-            <span className="rounded-full border border-line-strong px-2.5 py-0.5 text-xs text-fg-2" title="npm run dev:local: demo database, and no Naïve, AgentMail or Monid calls">
-              Local demo data · agents, email and Monid are off
-            </span>
-          )}
-          <p className="flex items-center gap-2 text-xs text-fg-2" role="status">
-            <span className={`size-2 rounded-full ${fresh ? "beacon bg-forest text-forest" : "bg-alert"}`} aria-hidden />
-            {fresh ? "Live" : "Reconnecting"}
-            {now && updatedAt && <span className="text-fg-3 tabular-nums">updated {Math.max(0, Math.round((now - updatedAt) / 1000))}s ago</span>}
-          </p>
-        </div>
+      <div className="flex flex-col items-start gap-2.5 px-2">
+        <Wordmark />
+        <nav aria-label="Dashboard" className="flex items-center gap-1 rounded-full border border-line-strong p-0.5 text-xs">
+          <span aria-current="page" className="rounded-full bg-raised px-3 py-1 text-fg">Mission control</span>
+          <Link href="/dashboard/sales" className="rounded-full px-3 py-1 text-fg-2 transition-colors hover:text-fg">Business</Link>
+        </nav>
       </div>
 
       <dl className="instrument grid-cols-2 overflow-hidden rounded-lg sm:grid-cols-4 xl:grid-cols-8" aria-label="Overview">
