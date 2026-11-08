@@ -151,7 +151,7 @@ export function DemoRequestView({ id, question, location, speed, hello }: {
               )}
             </div>
 
-            <Outcome progress={p} hello={hello} onDemoAccept={onDemoAccept} />
+            <Outcome progress={p} hello={hello} onDemoAccept={onDemoAccept} demo />
             {agentIsWorking(p) && <AgentNow owner={p.owner} since={ownerSince(p)} />}
             <AgentLog entries={frame.log} startedAt={p.createdAt} live={!p.terminal} />
             <Timeline events={p.events} />
@@ -162,8 +162,7 @@ export function DemoRequestView({ id, question, location, speed, hello }: {
       </main>
 
       <footer className="mt-16 border-t border-line pt-5 text-sm leading-relaxed text-fg-3">
-        Keep this page open or close it: the answer also arrives by email. Terragent is run by AI agents; a founder steps in
-        only where our rules require a person.
+        Keep this page open or close it: the answer also arrives by email. Terragent is run by AI agents.
       </footer>
     </div>
   );

@@ -43,8 +43,8 @@ function ImageCard({ img }: { img: PublicReport["images"][number] }) {
   );
 }
 
-/** `home` is where the logo links (/demo for the demo report). */
-export function ReportView({ report: r, url, home = "/" }: { report: PublicReport; url?: string; home?: string }) {
+/** `home` is where the logo links and `demo` adjusts the purchase wording (both for the /demo report). */
+export function ReportView({ report: r, url, home = "/", demo = false }: { report: PublicReport; url?: string; home?: string; demo?: boolean }) {
   const before = r.images.find((i) => i.role === "before");
   const after = r.images.find((i) => i.role === "after");
   const paired = before && after;
@@ -85,7 +85,7 @@ export function ReportView({ report: r, url, home = "/" }: { report: PublicRepor
           <Section title="What paid imagery would add">
             <p className="max-w-[44rem] leading-relaxed text-fg-2">
               {r.paidDataEstimate.wouldShow} Estimated data cost: {usd(r.paidDataEstimate.estCostUsd)} ({r.paidDataEstimate.providerId}).
-              We only buy imagery when you ask us to and a founder approves the purchase.
+              {demo ? "We only buy imagery when you choose a paid option." : "We only buy imagery when you ask us to and a founder approves the purchase."}
             </p>
           </Section>
         )}

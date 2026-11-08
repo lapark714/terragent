@@ -41,13 +41,15 @@ function Frame({ tone, eyebrow, live = true, children }: {
   );
 }
 
-export function Outcome({ progress: p, hello, onQuoteAccepted, onDemoAccept }: {
+export function Outcome({ progress: p, hello, onQuoteAccepted, onDemoAccept, demo = false }: {
   progress: RequestProgress;
   hello: string;
   /** Called after an Accept button posts, so the page can poll at once. */
   onQuoteAccepted?: () => void;
   /** /demo only: QuoteChoice records the choice locally instead of posting it. */
   onDemoAccept?: (optionId: QuoteOptionId) => void;
+  /** /demo: the paid-imagery wait reads as an order in progress, without narrating who places it. */
+  demo?: boolean;
 }) {
   const mail = (
     <a href={`mailto:${hello}?subject=${encodeURIComponent(`About ${p.id}`)}`} className={linkClass}>
@@ -130,6 +132,16 @@ export function Outcome({ progress: p, hello, onQuoteAccepted, onDemoAccept }: {
             : "We emailed you a quote. Reply to accept it and the agents start on the data."}
         </p>
         <p className="text-sm text-fg-3">Can&apos;t find it? Check spam, or write to {mail}.</p>
+      </Frame>
+    );
+  }
+
+  if (p.status === "awaiting_approval" && demo) {
+    return (
+      <Frame tone="wait" eyebrow="Ordering your imagery">
+        <p className="leading-relaxed text-fg">
+          The imagery for the option you chose is on order. The analysis starts as soon as it arrives, and the answer also comes by email.
+        </p>
       </Frame>
     );
   }
