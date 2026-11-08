@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { createDb } from "./client";
 import { migrate, splitSql } from "./migrate";
 
@@ -38,5 +38,22 @@ describe("migrate", () => {
     expect(row.h3_cells).toEqual(["872830828ffffff"]);
     expect(row.meta.a).toBe(1);
     await db.close();
+  });
+});
+
+describe("PGlite data dirs", () => {
+  it("shares one instance per data dir, so pages and routes in next dev see the same data", async () => {
+    const { mkdtemp } = await import("node:fs/promises");
+    const { tmpdir } = await import("node:os");
+    const path = await import("node:path");
+    const dir = await mkdtemp(path.join(tmpdir(), "tg-pglite-"));
+    vi.stubEnv("TERRAGENT_DB", ""); // vitest forces memory mode, which ignores data dirs; this test needs a real dir
+    const a = await createDb({ dataDir: dir });
+    const b = await createDb({ dataDir: dir });
+    await a.query("CREATE TABLE t (x int)");
+    await a.query("INSERT INTO t VALUES (42)");
+    expect(await b.query<{ x: number }>("SELECT x FROM t")).toEqual([{ x: 42 }]);
+    await a.close();
+    vi.unstubAllEnvs();
   });
 });

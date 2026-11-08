@@ -3,6 +3,7 @@ import { z } from "zod";
 import { AgentName, DecisionKind, RequestStatus } from "../../domain";
 import { logDecision } from "../../events";
 import { addNote, handoff, requireRequest, setStatus, STAGES } from "../../pipeline/requests";
+import { recordStatedWillingness } from "../../pipeline/revenue";
 import { getRequestView } from "../../pipeline/view";
 import type { ToolRegistrar } from "../types";
 
@@ -16,7 +17,7 @@ const requestId = z.string().describe("req_… id");
 const FINISHERS: Partial<Record<RequestStatus, readonly AgentName[]>> = {
   delivered: [],
   refused: [],
-  cancelled: ["coordinator", "comms-customer"],
+  cancelled: ["coordinator", "comms-customer", "comms-outreach"],
   failed: ["coordinator"],
 };
 const VIA_TOOL: Partial<Record<RequestStatus, string>> = { delivered: "deliver_report", refused: "record_screening (allowed=false)" };
@@ -51,10 +52,24 @@ export function register(r: ToolRegistrar): void {
     },
   );
 
-  r.tool("add_note", { request_id: requestId, note: z.string().min(1).max(2000) }, async (a, ctx) => {
-    await addNote(a.request_id, ctx.agent, a.note);
-    return { ok: true };
-  });
+  r.tool(
+    "add_note",
+    {
+      request_id: requestId,
+      note: z.string().min(1).max(2000),
+      stated_willingness_usd: z.number().positive().max(1_000_000).optional().describe(
+        "comms-customer only: a price the customer or prospect SAID they would pay (their words in the note); recorded as stated-willingness revenue",
+      ),
+    },
+    async (a, ctx) => {
+      if (a.stated_willingness_usd !== undefined && ctx.agent !== "comms-customer") {
+        return { error: "Only comms-customer records what a customer said they would pay; add the note without stated_willingness_usd." };
+      }
+      await addNote(a.request_id, ctx.agent, a.note);
+      if (a.stated_willingness_usd === undefined) return { ok: true };
+      return { ok: true, ...(await recordStatedWillingness({ requestId: a.request_id, amountUsd: a.stated_willingness_usd, note: a.note, actor: ctx.agent })) };
+    },
+  );
 
   r.tool(
     "log_decision",

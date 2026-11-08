@@ -32,8 +32,8 @@ Decisions log: [NOTES.md](../NOTES.md). This file is how the pieces fit; if you 
 
 | Lane | Used for | Mechanism | Why |
 |---|---|---|---|
-| **inbound** (`priority='inbound'`) | portal, email, API, live demo | `handoff` starts the next agent's session directly (`sessions.create`) and **mirrors** a board card with status `doing` (visible, wakes nobody) | Board runs one card per assignee at a time; a judge's request must not queue behind overnight samples. Target: ~2 min end to end. |
-| **background** (`priority='background'`) | signal-engine free samples, monitors, follow-ups | `handoff` creates a `todo` card **with assignee** on the coordinator's board → Naïve wakes the agent | Naïve-native team + board; serialisation is fine overnight. |
+| **inbound** (`priority='inbound'`) | portal, email, API, live demo | `handoff` starts the next agent's session directly (`sessions.create`) and **mirrors** a board card with status `doing` and **no assignee**, owner named in the title (visible, wakes nobody; an assigned `doing` card would make the agent busy) | Board runs one card per assignee at a time; a judge's request must not queue behind overnight samples. Target: ~2 min end to end. |
+| **background** (`priority='background'`) | signal-engine free samples, monitors, follow-ups | `handoff` creates one `todo` card **with assignee** per handoff, keyed `req:<id>:<n>:<to>` (the previous card is closed `done`) on the coordinator's board → Naïve wakes the agent | Naïve-native team + board; serialisation is fine overnight. |
 
 Both lanes write the same `requests.status/owner_agent/stage`, `events`, and board card, so the dashboard
 and the Naïve board show the same truth.
@@ -46,7 +46,7 @@ and the Naïve board show the same truth.
 | 1 | **comms-customer** (Comms 2) | `get_request`, `get_thread` | `record_screening` (refusals logged as `screening` decisions); `send_customer_message` if unclear | planner (or stop) |
 | 2 | **planner** (Brain 1) | `geocode`, `earth_index_lookup`, `search_free_scenes` | `save_data_spec` | acquisition |
 | 3 | **acquisition** (Orchestrator) | `search_free_scenes`, `list_providers`, SkyWatch MCP pricing | `log_decision` (source_selection, free_vs_paid), `save_acquisition_plan`; if paid would help: `request_supplier_quote`, `prepare_paid_order` (held), `place_paid_order` (**ask**) | pricing |
-| 4 | **pricing** | `estimate_costs`, `list_providers` | `create_quote` (auto-approved ≤ cap) | analytics if auto-approved, else comms-customer (`send_quote`) |
+| 4 | **pricing** | `estimate_costs`, `list_providers` | `create_quote` (auto-approved ≤ cap) | analytics if auto-approved; above the cap the quote is **held for a founder** (dashboard), then comms-customer sends it |
 | 5 | **analytics** | `get_analysis_job` | runs pipeline in its computer; `publish_file`; `save_analysis` (→ Earth index) | interpreter |
 | 6 | **interpreter** (Brain 2) | `get_analysis`, `earth_index_lookup`, `view_image` | `save_report_draft`, `check_report_rules` | verifier |
 | 7 | **verifier** | `get_report`, `get_analysis`, `check_report_rules`, `view_image` | `save_verdict` (fail → interpreter, max 2 revisions) | comms-customer |
@@ -146,10 +146,10 @@ The Analytics agent runs, inside its Naïve computer:
 ```bash
 # get_analysis_job returns bundle_file_id + these commands; the agent fetch_file()s the bundle to ~/bundle.tgz
 mkdir -p ~/tg && tar -xzf ~/bundle.tgz -C ~/tg && bash ~/tg/pipeline/bootstrap.sh     # idempotent; prints "ready"
-~/tg/pipeline/.venv/bin/python -m terragent_pipeline.run --job ~/job.json --out ~/out/<request_id>
+flock ~/tg.lock ~/tg/pipeline/.venv/bin/python -m terragent_pipeline.run --job ~/jobs/<request_id>.json --out ~/out/<request_id>
 ```
 
-- `job.json` (written by the agent from `get_analysis_job.job`):
+- `~/jobs/<request_id>.json` (one file per request, so concurrent sessions on the shared computer can't mix jobs; written by the agent from `get_analysis_job.job`; `get_analysis_job({monitor_id})` returns a monitor re-check job that keeps the baseline):
   `{ request_id, recipe, bbox: [minLon,minLat,maxLon,maxLat], before_window: {start,end}|null,
      after_window: {start,end}, before_scene: SceneRef|null, after_scene: SceneRef|null,
      max_cloud_pct, h3_res, collection: "sentinel-2-l2a" }`
@@ -158,7 +158,8 @@ mkdir -p ~/tg && tar -xzf ~/bundle.tgz -C ~/tg && bash ~/tg/pipeline/bootstrap.s
   Image paths in it are relative to `<out>`; the agent `publish_file`s each and passes
   `{ "<path>": "fil_…" }` to `save_analysis`.
 - Exit code 0 on success (even "no clear scene" — then `warnings` explains and indices may be empty);
-  non-zero only for crashes. Must finish a 2×2 km before/after job in < 60 s on 1 vCPU.
+  non-zero only for crashes. Must finish a 2×2 km before/after job in < 60 s on 1 vCPU. A wall-clock deadline (default 75 s;
+  `--deadline-s` / `TERRAGENT_PIPELINE_DEADLINE_S`, 0 = none) returns an empty result with a warning instead of hanging.
 - `bootstrap.sh` finds/installs Python ≥ 3.12 (uses `uv` if the system Python is older), creates
   `pipeline/.venv`, installs `requirements.txt`, and is safe to re-run (12 h computer lifetime).
 - Locally: `npm run pipeline -- --job job.json --out tmp/out` (wraps the same CLI) for tests and the simulator.

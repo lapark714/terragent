@@ -59,7 +59,8 @@ export async function listDueMonitors(f: { limit?: number; now?: Date } = {}) {
   );
   const due = [];
   for (const m of rows) {
-    const check = isDue(m.cadence, new Date(m.last_checked_at ?? m.created_at), now);
+    // Never checked → due now, so a monitor created this weekend is re-checked on the next monitors run (DoD 5).
+    const check = m.last_checked_at ? isDue(m.cadence, new Date(m.last_checked_at), now) : { due: true, next: now, valid: true };
     if (!check.due) continue;
     due.push({
       id: m.id,

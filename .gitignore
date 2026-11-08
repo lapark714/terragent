@@ -88,4 +88,4 @@ next-env.d.ts
 
 # --- Local dev database (PGlite) ---
 .pglite/
-.pglite-demo/
+.pglite-demo*/

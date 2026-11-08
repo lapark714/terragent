@@ -58,7 +58,7 @@ export const TOOLS: readonly ToolSpec[] = [
   { name: "handoff", group: "core", agents: [...PIPELINE, "coordinator"], permission: "allow",
     description: "Pass a request to the next agent with instructions. Starts that agent's session and updates the board." },
   { name: "add_note", group: "core", agents: [...PIPELINE, "coordinator"], permission: "allow",
-    description: "Append a note to a request's timeline (visible on the dashboard)." },
+    description: "Append a note to a request's timeline (visible on the dashboard). comms-customer may add stated_willingness_usd when a customer says what they would pay." },
   { name: "log_decision", group: "core", agents: ALL, permission: "allow",
     description: "Record a judgement call: kind, choice, reasoning and the alternatives considered (decision log)." },
 
@@ -102,7 +102,7 @@ export const TOOLS: readonly ToolSpec[] = [
 
   // --- analysis: Analytics ---------------------------------------------------
   { name: "get_analysis_job", group: "analysis", agents: ["analytics"], permission: "allow",
-    description: "Everything needed to run the pipeline for a request: bootstrap command, bundle file id, CLI arguments." },
+    description: "Everything needed to run the pipeline for a request (bootstrap command, bundle file id, CLI arguments). Pass monitor_id for a monitor re-check of a delivered request." },
   { name: "save_analysis", group: "analysis", agents: ["analytics"], permission: "allow",
     description: "Save the pipeline's AnalysisResult and published image file ids; writes derived values to the Earth index." },
   { name: "get_analysis", group: "analysis", agents: ["interpreter", "verifier"], permission: "allow",

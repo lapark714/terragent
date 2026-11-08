@@ -67,14 +67,33 @@ describe("customer tools", () => {
     expect(q.status).toBe("sent");
   });
 
-  it("creates a weekly monitor with the recipe's change threshold and the current baseline", async () => {
+  it("creates a 12-hourly monitor with the recipe's change threshold and the current baseline, not yet checked", async () => {
     const req = await quotedRequest();
     await saveAnalysis({ requestId: req.id, result: sampleAnalysis(), fileIds: SAMPLE_FILE_IDS }, "analytics");
     const res = await call("comms-customer", "create_monitor", { request_id: req.id, metric: "dnbr_mean" });
-    expect(res).toMatchObject({ recipe: "burn_severity", threshold: 0.27, cadence: "0 14 * * 1" });
-    const [m] = await (await getDb()).query<{ last_value: number; last_scene_date: Date }>("SELECT last_value, last_scene_date FROM monitors WHERE id = $1", [res.monitor_id]);
+    expect(res).toMatchObject({ recipe: "burn_severity", threshold: 0.27, cadence: "0 */12 * * *" });
+    const [m] = await (await getDb()).query<{ last_value: number; last_scene_date: Date; last_checked_at: Date | null }>(
+      "SELECT last_value, last_scene_date, last_checked_at FROM monitors WHERE id = $1", [res.monitor_id]);
     expect(m.last_value).toBeCloseTo(0.174);
+    expect(m.last_checked_at).toBeNull();
     expect((await getRequest(req.id))?.monitor_id).toBe(res.monitor_id);
+  });
+});
+
+describe("stated willingness to pay (add_note)", () => {
+  it("comms-customer records what a customer said they'd pay, once per request; other agents can't", async () => {
+    const req = await createRequest({ question: "Can you watch our quarry every month?", source: "email", email: "q@example.com" });
+    const rows = () => getDb().then((db) => db.query<{ kind: string; amount_usd: string; note: string }>(
+      "SELECT kind, amount_usd, note FROM revenue WHERE request_id = $1", [req.id]));
+
+    const res = await call("comms-customer", "add_note", { request_id: req.id, note: "Customer: 'we'd pay $150 a month for this'", stated_willingness_usd: 150 });
+    expect(res).toMatchObject({ ok: true, stated_willingness_usd: 150, replaced: false });
+    await call("comms-customer", "add_note", { request_id: req.id, note: "Customer raised it: '$200 a month is fine'", stated_willingness_usd: 200 });
+    expect(await rows()).toEqual([{ kind: "stated_willingness", amount_usd: "200.00", note: "Customer raised it: '$200 a month is fine'" }]);
+
+    expect((await call("planner", "add_note", { request_id: req.id, note: "they'd pay a lot", stated_willingness_usd: 999 })).error).toMatch(/Only comms-customer/);
+    expect(await call("planner", "add_note", { request_id: req.id, note: "plain note" })).toEqual({ ok: true });
+    expect(await rows()).toHaveLength(1);
   });
 });
 
@@ -109,5 +128,11 @@ describe("status changes", () => {
 
     expect(await call("comms-customer", "set_status", { request_id: req.id, status: "cancelled", note: "Customer withdrew" })).toMatchObject({ status: "cancelled" });
     expect((await getRequest(req.id))?.status).toBe("cancelled");
+  });
+
+  it("comms-outreach can close a free sample it decides not to contact", async () => {
+    const req = await quotedRequest();
+    expect(await call("comms-outreach", "set_status", { request_id: req.id, status: "cancelled", note: "Imagery shows nothing relevant to this business" })).toMatchObject({ status: "cancelled" });
+    expect((await call("comms-outreach", "set_status", { request_id: req.id, status: "failed" })).error).toMatch(/coordinator/);
   });
 });

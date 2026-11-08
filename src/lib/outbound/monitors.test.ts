@@ -43,6 +43,12 @@ describe("listDueMonitors", () => {
     expect(res.due.map((m) => m.id).sort()).toEqual([due.id, never.id].sort());
     expect(res.due.find((m) => m.id === due.id)).toMatchObject({ kind: "customer", last_scene_date: "2026-11-01", bbox: expect.any(Array) });
   });
+
+  it("a monitor created moments ago and never checked is due on the very next run (DoD 5 within the weekend)", async () => {
+    const fresh = await seedMonitor({ last_checked_at: null, created_at: new Date("2026-11-09T14:59:00Z") });
+    const res = await listDueMonitors({ now: new Date("2026-11-09T15:00:00Z") });
+    expect(res.due.map((m) => m.id)).toContain(fresh.id);
+  });
 });
 
 describe("recordMonitorCheck", () => {

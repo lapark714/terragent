@@ -7,6 +7,7 @@
  * PGlite note: only one process can open a given data dir at a time
  * (stop `next dev` before running a script against the same .pglite dir, or use TERRAGENT_DB=memory).
  */
+import path from "node:path";
 import type { PGlite } from "@electric-sql/pglite";
 
 export type Row = Record<string, unknown>;
@@ -53,10 +54,33 @@ async function createNeonDb(url: string): Promise<Db> {
   };
 }
 
+/**
+ * One PGlite instance per data dir per process. `next dev` loads pages and route handlers as separate module
+ * graphs, so without this each would open its OWN instance on the same directory: they'd see different data and
+ * could corrupt the files. globalThis is shared across those graphs within one Node process.
+ */
+type PgliteRegistry = Map<string, Promise<PGlite>>;
+const registry = ((globalThis as { __terragentPglite?: PgliteRegistry }).__terragentPglite ??= new Map());
+
+async function openPglite(dataDir: string): Promise<PGlite> {
+  const { PGlite } = await import("@electric-sql/pglite");
+  const pg = new PGlite(dataDir);
+  await pg.waitReady;
+  return pg;
+}
+
 async function createPgliteDb(dataDir?: string): Promise<Db> {
   const { PGlite } = await import("@electric-sql/pglite");
-  const pg: PGlite = dataDir ? new PGlite(dataDir) : new PGlite();
-  await pg.waitReady;
+  let pg: PGlite;
+  if (dataDir) {
+    const key = path.resolve(dataDir);
+    if (!registry.has(key)) registry.set(key, openPglite(key));
+    pg = await registry.get(key)!;
+  } else {
+    pg = new PGlite(); // in-memory: private to the caller (tests)
+    await pg.waitReady;
+  }
+  const shared = !!dataDir;
   return {
     kind: "pglite",
     async query<T = Row>(text: string, params: unknown[] = []) {
@@ -64,6 +88,10 @@ async function createPgliteDb(dataDir?: string): Promise<Db> {
       return res.rows;
     },
     async close() {
+      if (shared) {
+        // Only scripts close the database (app code keeps getDb() open), so closing releases the shared instance.
+        registry.delete(path.resolve(dataDir!));
+      }
       await pg.close();
     },
   };
