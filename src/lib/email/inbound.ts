@@ -374,14 +374,10 @@ async function continueProspect(m: InboundEmail, inbox: Inbox, route: Extract<Ro
     meta: { origin: "prospect_reply", ...(p?.sample_request_id ? { sample_request_id: p.sample_request_id } : {}) },
   }));
   await logEvent("prospect.replied", SYSTEM, { prospect_id: route.prospectId, inbox, thread_id: m.threadId }, requestId);
-  const sample = p?.sample_request_id
-    ? ` Their free sample is request ${p.sample_request_id}: to watch that site, create_monitor on ${p.sample_request_id} (this request has no data spec).`
-    : "";
-  const fresh = opened
-    ? " This reply opened a new request: record_screening (allowed) before any handoff; new work (a full report, another site or dates) goes to planner."
-    : "";
+  const fresh = opened ? " This reply opened a new request: record_screening (allowed) first." : "";
   return toComms2(m, inbox, requestId, messageRowId, "prospect_reply",
-    `This is a reply from outreach prospect ${route.prospectId} (${route.company}), who got a free sample report: answer, quote and sell as for any customer.${fresh}${sample}`);
+    `This is a reply from outreach prospect ${route.prospectId} (${route.company}), who got a free sample report. Outreach only gathers interest and prices for now: record anything they say they would pay, ` +
+    `tell them we aren't taking orders yet, and start no work, quote or monitor.${fresh}`);
 }
 
 async function newRequest(
