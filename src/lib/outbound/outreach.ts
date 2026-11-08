@@ -9,6 +9,7 @@
  * cancelled. That closes its board card, so a finished sample is not parked "blocked" and re-woken by the coordinator.
  * A blocked email or a form error leaves it open on purpose: the coordinator retries those once.
  */
+import { env } from "../env";
 import { createHash } from "node:crypto";
 import { inboxAddress } from "../agentmail/config";
 import { CAPS, PRICING } from "../config";
@@ -40,6 +41,7 @@ const CONTACT_FORM_RULES = [
   "Never solve a CAPTCHA: skip the form and record_contact_form_touch status=skipped skip_reason=captcha.",
   "Skip sites or forms that say no solicitations (skip_reason=no_solicitation_notice).",
   "Give reply_to as the email to reply to. One touch per business, ever.",
+  "If a form requires a phone number, use contact_form.phone. If that is null, skip (skip_reason=other, 'phone required'); never invent one.",
   "A form is not an email: where the text says to reply to this email, say to write to the reply_to address instead.",
   "Paste rendered.text (you may shorten it to fit the form, keeping the finding, report link, price, AI disclosure and opt-out).",
   "Right after submitting, call record_contact_form_touch with the exact text you sent.",
@@ -237,6 +239,7 @@ export async function getOutreachContext(a: { prospectId: string; vars?: Record<
             url: p.contact_form_url,
             find_it: p.contact_form_url ? null : findForm(p),
             reply_to: c.replyTo,
+            phone: env("OUTREACH_PHONE") ?? null,
             rules: CONTACT_FORM_RULES,
           },
         }

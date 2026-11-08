@@ -106,6 +106,8 @@ describe("agent configs", () => {
     expect(who("fetch_file")).toEqual([]);
     expect(who("view_image")).toEqual(["interpreter", "verifier"]);
     expect(who("board_write")).toEqual(["coordinator"]);
+    // Being on the board offers board_write even under a deny default, so an unlisted tool can still park a flagged cron run.
+    expect(configsOf("sourcing").board_write).toEqual({ enabled: false, permission: "deny" });
     expect(who("send_to_agent")).toEqual(["coordinator"]);
   });
 
@@ -232,10 +234,10 @@ describe("deployments", () => {
     expect(followups).toMatchObject({ agent: "comms-outreach" });
     expect(followups.prompt).toMatch(/terragent\.list_followups[\s\S]*kind=followup[\s\S]*log_decision kind outreach/);
     expect(firesPerDay(followups.cron)).toBe(4);
-    // every 3 h per playbook, staggered so no two sweeps share an hour
-    const hours = DEPLOYMENTS.filter((d) => d.agent === "sourcing").flatMap((d) => d.cron.split(" ")[1].split(",").map(Number));
-    expect(hours).toHaveLength(24);
-    expect(new Set(hours).size).toBe(24);
+    // every playbook hourly, staggered so no two sweeps start together
+    const sweeps = DEPLOYMENTS.filter((d) => d.agent === "sourcing").map((d) => d.cron.split(" "));
+    expect(sweeps.map((c) => c[1])).toEqual(["*", "*", "*"]);
+    expect(new Set(sweeps.map((c) => c[0])).size).toBe(3);
   });
 
   it("warns when a budget leaves less than 2x the model's measured pre-flight minimum", () => {

@@ -179,7 +179,7 @@ describe("getSpendOverview", () => {
     await seedFunnel();
     const s = await getSpendOverview();
     expect(s.naive).toMatchObject({ total_usd: 12.5, balance_usd: 238, source: "naive ledger" });
-    expect(s.naive.by_agent_today.sourcing).toEqual({ spent_today_usd: 2, cap_per_day_usd: 30, remaining_today_usd: 28 });
+    expect(s.naive.by_agent_today.sourcing).toEqual({ spent_today_usd: 2, cap_per_day_usd: 100, remaining_today_usd: 98 });
     expect(s.naive.by_agent_today.agt_unknown.cap_per_day_usd).toBeNull();
     expect(s.monid).toEqual({ total_usd: 0.15, today_usd: 0.15, cap_per_day_usd: CAPS.monidMaxUsdPerDay, remaining_today_usd: CAPS.monidMaxUsdPerDay - 0.15 });
     expect(s.revenue).toEqual({ paid_usd: 49, committed_usd: 29, stated_willingness_usd: 100 });

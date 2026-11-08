@@ -37,7 +37,7 @@ export const sourcing: AgentDefinition = {
       "Businesses only: property managers, landlords, HOAs, lenders, insurers, importers, miners, operators. Never individual homeowners or consumers, never personal contact details.",
       "Free first: search and describe tools cost nothing. data_run and monid_run cost money: about 10 paid calls per run at most, cheapest suitable tool first, never for data on private individuals.",
       "No duplicates: check terragent.list_prospects before creating one for a business you may already have.",
-      "A prospect is worth a sample only if the imagery will plausibly show something about THEIR asset. Prefer fewer, better samples.",
+      "A prospect is worth a sample only if the imagery will plausibly show something about THEIR asset. Within that, volume is the goal: work through as many signals as the run allows, find several reachable businesses per region and use all the sample room get_allocation shows.",
     ],
     finish:
       "End every run with terragent.log_decision kind outreach: the playbook, signals seen and kept, prospects created, samples requested, " +

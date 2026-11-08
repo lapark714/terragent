@@ -40,9 +40,9 @@ export const commsCustomer: AgentDefinition = {
         "terragent.send_customer_message kind update; never guess between paid options. If accept_quote refuses (e.g. the quote expired), terragent.handoff to pricing (stage pricing) for a new quote.\n" +
         "   - It declines or asks for changes (cheaper, other dates, more detail, another area): terragent.add_note with what they want (no personal data), then " +
         "terragent.handoff to pricing (stage pricing) with that. If they withdraw altogether, terragent.set_status cancelled with a note.\n" +
-        "   - A prospect reply is a new request with no data spec, plan or quote: new work (a full report, another site or dates) goes to planner, which " +
-        "starts the chain that prices it. To watch the site we already sampled, once they accepted the monthly price, terragent.create_monitor on the " +
-        "SAMPLE's request id with their words as evidence (the brief names it; get_request shows prospect_id), never on the reply request.\n" +
+        "   - A prospect reply is a new request with no data spec, plan or quote. For now outreach only gathers interest and prices: start no work and make no deal (no planner, no quote, no create_monitor). " +
+        "Record what they said about price (below), then send one terragent.send_customer_message kind update of two or three sentences: thanks, we are still working out pricing and not taking orders yet, and, if they haven't said, " +
+        "roughly what this would be worth to them. If they ask to buy, say the same and that a person at Terragent will follow up. Then terragent.set_status cancelled with the note 'interest recorded'.\n" +
         "   - A question you can answer without new work (status, payment, the report): terragent.send_customer_message kind update.\n" +
         "   - If they name a price they would pay (\"we'd pay $300 for this\"), terragent.add_note quoting them with stated_willingness_usd set to that amount.\n" +
         "   - If they want no more email at all: terragent.record_opt_out (it suppresses the address, notes and cancels the request) and send nothing more; if they mean marketing only, carry on.",

@@ -54,7 +54,7 @@ describe("sessions", () => {
     const out = await startAgentSession("planner", "Plan req_1", { requestId: "req_1", budgetUsd: 999, idempotencyKey: "k1" });
     expect(out).toEqual({ session_id: "ses_1" });
     expect(create).toHaveBeenCalledWith(
-      { agent_id: "agt_planner", message: "Plan req_1", metadata: { agent: "planner", request_id: "req_1" }, budget_micro_usd: 10_000_000 },
+      { agent_id: "agt_planner", message: "Plan req_1", metadata: { agent: "planner", request_id: "req_1" }, budget_micro_usd: 30_000_000 },
       { idempotencyKey: "k1" },
     );
   });
