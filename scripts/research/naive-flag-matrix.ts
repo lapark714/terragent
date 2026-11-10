@@ -2,12 +2,12 @@
  * Probe which get_request content trips Naïve's "read people's data" flag.
  * Creates two probe requests (meta.probe), runs one planner session per request (get_request, then list_providers)
  * and reports whether the second call parked. Removes the probe rows afterwards.
- *   npx tsx scripts/naive-flag-matrix.ts
+ *   npx tsx scripts/research/naive-flag-matrix.ts
  */
 import "dotenv/config";
-import { getDb } from "../src/lib/db/client";
-import { naive } from "../src/lib/naive/client";
-import { getSetting, SETTING } from "../src/lib/settings";
+import { getDb } from "../../src/lib/db/client";
+import { naive } from "../../src/lib/naive/client";
+import { getSetting, SETTING } from "../../src/lib/settings";
 
 const db = await getDb();
 const agents = await getSetting<Record<string, { id: string }>>(SETTING.naiveAgents, {});

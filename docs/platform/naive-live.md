@@ -3,7 +3,7 @@
 Status: verified live on 2026-11-07, 23:00–23:40 UTC, with the org key in `.env` (key `main2`) and the
 throwaway agent `tg-smoke`; board limits and config round trips re-checked on 2026-11-08 with `tg-smoke`
 plus two throwaway members `tg-smoke-a`/`tg-smoke-b` (`--only roundtrip,board-limits`). Scripts:
-`scripts/naive-smoke.ts`, `naive/smoke-board.ts`, `scripts/naive-probe-computer.ts`,
+`scripts/naive-smoke.ts`, `naive/smoke-board.ts`, `scripts/research/naive-probe-computer.ts`,
 `src/lib/naive/naive.live.test.ts`. Raw outputs were kept in the session scratchpad, not in the repo.
 Where this file disagrees with naive-core.md, naive-orchestration.md or naive-compute.md, this file wins
 for the points it covers.

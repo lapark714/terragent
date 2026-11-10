@@ -79,7 +79,7 @@ Naïve agents do their own outreach. Once a free analysis passes verification, t
 - **Email from a Naïve inbox.** The agent's Naïve identity sends cold email. AgentMail doesn't allow cold outreach and Naïve does, so each platform handles the traffic it permits.
 - **The business's own contact form.** The agent opens the website in Naïve's sandbox browser, fills in the form as Terragent, and submits it once.
 
-Every message carries the finding, a clear next step, an AI disclosure and an opt-out. Outreach goes to businesses only, once per business, and follow-ups happen only when there is something new to say, such as a fresh clear image or a detected change. Replies flow back to the customer agent, and reply rates by market feed the coordinator's decisions.
+Every message carries the finding, a clear next step, an AI disclosure and an opt-out. Outreach goes to businesses only, once per business, and a follow-up goes out only when a later clear image shows a change over the threshold. Replies flow back to the customer agent, and reply rates by market feed the coordinator's decisions.
 
 ## Tech stack
 
@@ -121,6 +121,26 @@ Every message carries the finding, a clear next step, an AI disclosure and an op
 | Commercial imagery | Registry of 15 paid sources, with live pricing from SkyWatch's MCP server |
 | Signal feeds | NWS, NOAA NWPS, NASA FIRMS, USGS, OpenFEMA, Global Forest Watch, BLM |
 | Film | Remotion |
+
+## Run it
+
+Terragent needs no accounts to look around: the local mode uses an in-process database with demo data and calls no
+outside service.
+
+```bash
+npm install
+npm run dev:local        # http://localhost:3000, with seeded requests, reports and a dashboard
+```
+
+Checks:
+
+```bash
+npm run typecheck && npm test && npm run lint
+npm run test:pipeline    # the Python imagery pipeline (creates pipeline/.venv)
+```
+
+Running it for real needs Naïve, AgentMail, Neon and Vercel credentials; `.env.example` lists every variable and
+[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) explains how the pieces fit.
 
 ## The potential
 

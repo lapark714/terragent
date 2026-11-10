@@ -2,12 +2,12 @@
  * Two probes run in parallel on a real request:
  *  A) plain session: get_request, then geocode(location), then list_providers   (does the combination flag?)
  *  B) startAgentSession() with the handoff's brief + metadata, no board card    (does how the session starts flag it?)
- *   npx tsx scripts/naive-flag-probe-combo.ts <request_id> "<location text>"
+ *   npx tsx scripts/research/naive-flag-probe-combo.ts <request_id> "<location text>"
  */
 import "dotenv/config";
-import { naive } from "../src/lib/naive/client";
-import { startAgentSession } from "../src/lib/naive/sessions";
-import { getSetting, SETTING } from "../src/lib/settings";
+import { naive } from "../../src/lib/naive/client";
+import { startAgentSession } from "../../src/lib/naive/sessions";
+import { getSetting, SETTING } from "../../src/lib/settings";
 
 const [requestId, place] = process.argv.slice(2);
 if (!requestId || !place) throw new Error("usage: naive-flag-probe-combo.ts <request_id> \"<location>\"");

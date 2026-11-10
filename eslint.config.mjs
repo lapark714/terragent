@@ -14,6 +14,9 @@ const eslintConfig = defineConfig([
     "next-env.d.ts",
     // Standalone Remotion project with its own package.json and lint config.
     "video/**",
+    // Other Claude Code sessions' temporary checkouts, and build output.
+    ".claude/**",
+    "dist/**",
   ]),
 ]);
 

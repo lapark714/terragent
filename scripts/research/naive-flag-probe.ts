@@ -1,11 +1,11 @@
 /**
  * Probe Naïve's "read people's data" flag: does an MCP read WITHOUT personal data flag the chat?
  * Starts one short pricing-agent session that calls two PII-free tools, then reports pending actions.
- *   npx tsx scripts/naive-flag-probe.ts
+ *   npx tsx scripts/research/naive-flag-probe.ts
  */
 import "dotenv/config";
-import { naive } from "../src/lib/naive/client";
-import { getSetting, SETTING } from "../src/lib/settings";
+import { naive } from "../../src/lib/naive/client";
+import { getSetting, SETTING } from "../../src/lib/settings";
 
 const agents = await getSetting<Record<string, { id: string }>>(SETTING.naiveAgents, {});
 const pricing = agents.pricing?.id;

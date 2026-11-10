@@ -48,7 +48,7 @@ and the Naïve board show the same truth.
 | 3 | **acquisition** (Orchestrator) | `search_free_scenes`, `list_providers`, SkyWatch MCP pricing | `log_decision` (source_selection, free_vs_paid), `save_acquisition_plan` with the comparison the quote's options need (free source, best paid archive, tasking where relevant); `request_supplier_quote` only when the one paid source that answers has no public price | pricing |
 | 4 | **pricing** | `price_options` (server prices 1–3 options bottom-up, [pricing-engine.ts](../src/lib/pipeline/pricing-engine.ts)), `list_providers` | `create_quote` (server re-prices each option and refuses edited data items or prices; 7-day validity, accept token; status `quoted`) | comms-customer (handed by `create_quote`; no founder review) |
 | 4b | **comms-customer** | `get_request`, `get_thread` | `send_quote` (options email + accept link); on the customer's reply `accept_quote` (option named, or the recommended one on a plain yes). The accept link (`/quote/<token>`, `POST /api/quotes/accept`) and API clients (`GET /api/answer/{id}` → `quote.accept`) use the same service ([acceptance.ts](../src/lib/pipeline/acceptance.ts)) | free-data option → analytics (or interpreter for an Earth-index answer); paid option → held order per paid item + coordinator card; a founder buys by hand and marks it delivered (dashboard) → analytics |
-| 5 | **analytics** | `get_analysis_job` | runs pipeline in its computer; `publish_file`; `save_analysis` (→ Earth index) | interpreter |
+| 5 | **analytics** | `run_analysis` | the backend runs the pipeline on its own Naïve computer and saves the result (→ Earth index) | interpreter |
 | 6 | **interpreter** (Brain 2) | `get_analysis`, `earth_index_lookup`, `view_image` | `save_report_draft`, `check_report_rules` | verifier |
 | 7 | **verifier** | `get_report`, `get_analysis`, `check_report_rules`, `view_image` | `save_verdict` (fail → interpreter, max 2 revisions) | comms-customer |
 | 8 | **comms-customer** | `get_report` | `deliver_report` (same thread, images + link); `create_monitor` only once the customer accepted the monthly price (their words as evidence) | done |
@@ -73,10 +73,12 @@ with the system's own monitor on a verified free sample.
    - `contact_form` (cold, default): the business's own website contact form via the Naïve `browser` tool
      (`solve_captchas: false`, `stealth: false`), reply-to hello@ → `record_contact_form_touch`.
    - `email_warm`: `send_outreach_email` to people who wrote to us / attendees.
-   - `email_direct`: only when `OUTREACH_DIRECT_EMAIL_APPROVED=true`.
+   - `email_direct`: cold work email from the Naïve identity inbox (never AgentMail), only when
+     `OUTREACH_DIRECT_EMAIL_APPROVED=true`. Replies and opt-outs there are read back by `src/lib/email/naive-inbox.ts`.
    Every touch: their asset's image + one finding, next step + price, sender identity, **AI disclosure**,
    opt-out link. Sends are blocked until a founder approves the template and arms the inbox.
-4. Replies arrive at hello@ (AgentMail webhook) → matched to the prospect → comms-customer quotes and sells.
+4. Replies arrive at hello@ (AgentMail webhook) or the Naïve inbox → matched to the prospect → comms-customer records what
+   they would pay. During the outreach push no work or quote starts from a prospect reply.
 5. **coordinator** on cron: `get_metrics` → `set_playbook_allocation` (logged as a decision with metrics).
 6. **analytics** on cron: `list_due_monitors` → re-check → `record_monitor_check` → follow-up with new info.
 
@@ -152,10 +154,11 @@ fields is fine). Other modules import them freely.
 
 ## 10. Pipeline CLI contract (core ↔ imagery ↔ Analytics agent)
 
-The Analytics agent runs, inside its Naïve computer:
+The backend runs this on its own Naïve computer when the Analytics agent calls `terragent.run_analysis`
+(`src/lib/naive/compute.ts`). Naïve refuses bash to our agents, so the agent never runs it itself:
 
 ```bash
-# get_analysis_job returns bundle_file_id + these commands; the agent fetch_file()s the bundle to ~/bundle.tgz
+# the bundle is installed once per version (marker ~/tg/.bundle-<sha>)
 mkdir -p ~/tg && tar -xzf ~/bundle.tgz -C ~/tg && bash ~/tg/pipeline/bootstrap.sh     # idempotent; prints "ready"
 flock ~/tg.lock ~/tg/pipeline/.venv/bin/python -m terragent_pipeline.run --job ~/jobs/<request_id>.json --out ~/out/<request_id>
 ```
@@ -166,8 +169,8 @@ flock ~/tg.lock ~/tg/pipeline/.venv/bin/python -m terragent_pipeline.run --job ~
      max_cloud_pct, h3_res, collection: "sentinel-2-l2a" }`
   Scenes may be null → the pipeline searches itself.
 - stdout: one line of JSON = `AnalysisResult` (src/lib/domain.ts), also written to `<out>/result.json`.
-  Image paths in it are relative to `<out>`; the agent `publish_file`s each and passes
-  `{ "<path>": "fil_…" }` to `save_analysis`.
+  Image paths in it are relative to `<out>`; the backend uploads each to Naïve Files and saves the result.
+- An area across a Sentinel-2 tile edge is read whole: gaps are filled from the other tiles of the same satellite pass.
 - Exit code 0 on success (even "no clear scene" — then `warnings` explains and indices may be empty);
   non-zero only for crashes. Must finish a 2×2 km before/after job in < 60 s on 1 vCPU. A wall-clock deadline (default 75 s;
   `--deadline-s` / `TERRAGENT_PIPELINE_DEADLINE_S`, 0 = none) returns an empty result with a warning instead of hanging.

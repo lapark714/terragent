@@ -1,13 +1,13 @@
 /**
  * Probe an agent's Naïve computer (OS, Python, pip/venv/uv, disk, egress) with read-only commands, so
  * the imagery pipeline's bootstrap can be written against facts. The computer exists only after one of
- * the agent's sessions has used a shell tool (scripts/naive-smoke.ts does that for tg-smoke).
+ * the agent's sessions has used a shell tool (scripts/research/naive-smoke.ts does that for tg-smoke).
  *
- *   npx tsx scripts/naive-probe-computer.ts --agent tg-smoke [--json]
+ *   npx tsx scripts/research/naive-probe-computer.ts --agent tg-smoke [--json]
  */
 import "dotenv/config";
 import { parseArgs } from "node:util";
-import { naive } from "../src/lib/naive/client";
+import { naive } from "../../src/lib/naive/client";
 
 const { values } = parseArgs({
   options: { agent: { type: "string", default: "tg-smoke" }, json: { type: "boolean", default: false } },
@@ -48,7 +48,7 @@ const agents = await client.agents.list({ limit: 100 });
 const agent = agents.data.find((a) => a.name === values.agent || a.id === values.agent);
 if (!agent) throw new Error(`no agent named ${values.agent}`);
 const computer = await client.agents.computer(agent.id);
-if (!computer) throw new Error(`${values.agent} has no computer yet: run one session that uses bash first (scripts/naive-smoke.ts)`);
+if (!computer) throw new Error(`${values.agent} has no computer yet: run one session that uses bash first (scripts/research/naive-smoke.ts)`);
 
 const results = [];
 for (const c of CHECKS) {

@@ -43,18 +43,6 @@ export const DATA: ToolConfigs = { data_search: allow(), data_describe: allow(),
 
 export const VISION: ToolConfigs = { view_image: allow() };
 
-/** The agent's own computer: run the pipeline, move files between disk and Naïve Files. */
-export const COMPUTER: ToolConfigs = {
-  bash: allow(),
-  read: allow(),
-  write: allow(),
-  edit: allow(),
-  ls: allow(),
-  find: allow(),
-  fetch_file: allow(),
-  publish_file: allow(),
-};
-
 /** Browser actions that can fill in or submit a form; everything else (goto, observe, extract, links, screenshot) only reads. */
 export const BROWSER_WRITE_ACTIONS = ["act", "click", "type"] as const;
 

@@ -1,21 +1,21 @@
 /**
  * Probe: does calling get_request on a SPECIFIC request flag a fresh session that has no board card or handoff link?
- *   npx tsx scripts/naive-flag-probe-request.ts <request_id> [agent=planner]
+ *   npx tsx scripts/research/naive-flag-probe-geocode.ts <place text> [agent=planner]
  */
 import "dotenv/config";
-import { naive } from "../src/lib/naive/client";
-import { getSetting, SETTING } from "../src/lib/settings";
+import { naive } from "../../src/lib/naive/client";
+import { getSetting, SETTING } from "../../src/lib/settings";
 
 const [requestId, agent = "planner"] = process.argv.slice(2);
-if (!requestId) throw new Error("usage: naive-flag-probe-request.ts <request_id> [agent]");
+if (!requestId) throw new Error("usage: naive-flag-probe-geocode.ts <place text> [agent]");
 const agents = await getSetting<Record<string, { id: string }>>(SETTING.naiveAgents, {});
 const client = naive();
 const s = await client.sessions.create({
   agent_id: agents[agent].id,
   budget_micro_usd: 600_000,
-  metadata: { probe: "flag_by_request" },
+  metadata: { probe: "flag_by_geocode" },
   message:
-    "Diagnostic run, not a customer request. Call terragent.get_request with request_id \"" + requestId +
+    "Diagnostic run, not a customer request. Call terragent.geocode with text \"" + requestId +
     "\". Then call terragent.list_providers with data_type \"optical\". Then reply \"done\". Call no other tools and save nothing.",
 });
 for (let i = 0; i < 60; i++) {

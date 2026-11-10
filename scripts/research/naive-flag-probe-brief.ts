@@ -2,12 +2,12 @@
  * Decisive probe: re-run a real stage with the EXACT brief of an earlier (flagged) session, via startAgentSession,
  * WITHOUT writing the board card. Interrupts the flagged session first. If this one isn't flagged, the board card is
  * the trigger; if it is, the brief/content is.
- *   npx tsx scripts/naive-flag-probe-brief.ts <flagged ses_id> <agent> <request_id>
+ *   npx tsx scripts/research/naive-flag-probe-brief.ts <flagged ses_id> <agent> <request_id>
  */
 import "dotenv/config";
-import { AgentName } from "../src/lib/domain";
-import { naive } from "../src/lib/naive/client";
-import { startAgentSession } from "../src/lib/naive/sessions";
+import { AgentName } from "../../src/lib/domain";
+import { naive } from "../../src/lib/naive/client";
+import { startAgentSession } from "../../src/lib/naive/sessions";
 
 const [flagged, agentArg, requestId] = process.argv.slice(2);
 if (!flagged || !agentArg || !requestId) throw new Error("usage: naive-flag-probe-brief.ts <ses_id> <agent> <request_id>");
