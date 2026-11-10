@@ -61,6 +61,13 @@ _This table is refreshed after platform research; see docs/platform/README.md fo
 - **2026-11-08 — Crons on (7 Naïve deployments, America/Los_Angeles): 3 sourcing sweeps, coordinator review, monitors,
   outreach follow-ups, market research.** Cold email stays blocked by `missing_postal_address` until a founder supplies a
   real one; contact-form outreach is on. Pause with `deployments.pause` / the Naïve console.
+- **2026-11-10 — Only the cheap crons run (Laurence: "keep anything running that's not something costly").** Measured
+  from `agent_sessions` since the overnight run: a sourcing sweep is ~$0.13, but each free sample it starts costs ~$0.85
+  downstream (planner, interpreter, verifier). A monitor re-check or follow-up run costs ~$0.01, and market research
+  ~$0.16 a day. So monitors, outreach follow-ups and market research are on. The 3 sourcing sweeps and coordinator review
+  stay paused; the review would restart the ~32 open samples. Main (100182a, with the loop and follow-up fixes) was
+  deployed first. Expected cost: under $1 a day. The website, webhooks, inbox sync and paused pipeline computer cost
+  nothing while idle.
 - **2026-11-08 — Areas across a tile edge are now read whole.** The Folsom Lake test (req_mcay6fqpru) lost a third of its
   area because the pipeline read one Sentinel-2 tile, and the pre-quote check averaged only pixels inside that tile, so it
   read as clear. The pipeline now fills gaps from the other tiles of the same pass (`load_pass`, scenes.py), and
