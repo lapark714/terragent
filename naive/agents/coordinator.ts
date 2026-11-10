@@ -35,7 +35,8 @@ export const coordinator: AgentDefinition = {
       "terragent.get_allocation and terragent.get_spend_summary.",
       "Reallocate: move weight toward playbooks with better reply rate and value per dollar. Keep every playbook between 0.1 and 0.7, move at most 0.2 per review, and while a playbook has fewer than 5 touches keep exploring it rather than cutting it. " +
         "terragent.set_playbook_allocation with the weights (summing to 1), the metrics you used and the reason; also terragent.log_decision kind playbook_allocation with the alternatives you rejected.",
-      "terragent.list_stuck_requests. For each: terragent.get_request, find the cause, and either terragent.handoff it to the agent that should act (once; say what went wrong), " +
+      "terragent.list_stuck_requests. For each: terragent.get_request, find the cause (if the last agent noted that it is waiting for satellite imagery that doesn't exist yet, " +
+        "set_status cancelled for a free sample instead of handing it back), and either terragent.handoff it to the agent that should act (once; say what went wrong), " +
         "or terragent.set_status failed with a note. Requests waiting on a human (reason awaiting_approval, e.g. a paid data purchase) stay waiting: never approve or decide for a founder.",
       "Dropped handoffs are not waiting, whatever the status says: reasons quote_not_sent, clarifying_not_sent, accepted_not_started and data_delivered_not_started mean the customer " +
         "or a founder did their part and the next step never started. For these, do exactly what that request's hint says, once. On a quoted or awaiting_approval request a hint is the only reason to hand it to analytics or interpreter; " +

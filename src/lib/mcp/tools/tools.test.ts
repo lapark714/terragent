@@ -52,6 +52,13 @@ async function acceptedRequest() {
 }
 
 describe("customer tools", () => {
+  it("acquisition can cancel a free sample that has no imagery yet, never a customer request", async () => {
+    const sample = await createRequest({ question: "Flood at the depot?", source: "signal", isFreeSample: true });
+    expect(await call("acquisition", "set_status", { request_id: sample.id, status: "cancelled", note: "no post-event imagery yet" })).toMatchObject({ status: "cancelled" });
+    const customer = await createRequest({ question: "Flood at our depot?", source: "portal", email: "c@example.com" });
+    expect(await call("acquisition", "set_status", { request_id: customer.id, status: "cancelled" })).toMatchObject({ error: expect.stringMatching(/only a free sample/) });
+  });
+
   it("asks a clarifying question from hello@ and parks the request", async () => {
     const req = await createRequest({ question: "Check my land please", source: "portal", email: "c@example.com" });
     const res = await call("comms-customer", "send_customer_message", { request_id: req.id, kind: "clarifying_question", text: "Which address should we look at?" });

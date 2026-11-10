@@ -11,6 +11,9 @@ import { isChangeMetric, sceneSource } from "./earth-index";
 
 type Runner = (job: Record<string, unknown>, key: string) => Promise<NaiveRunResult>;
 
+/** Share of the AOI a re-check scene must show clear to count as new information. */
+export const MONITOR_MIN_CLEAR = 0.7;
+
 /** A monitor's reading from a pipeline result: the index named at the start of the metric (longest name wins). */
 export function monitorReading(result: AnalysisResult, metric: string) {
   const m = metric.toLowerCase();
@@ -24,6 +27,8 @@ export function monitorReading(result: AnalysisResult, metric: string) {
     value: after ? raw : null,
     scene_date: after ? after.datetime.slice(0, 10) : null,
     scene_id: after ? sceneSource(after) : undefined,
+    // The pipeline falls back to the clearest scene when none is clear: that is not a new look at the site.
+    clear_scene: !!after && after.clear_fraction >= MONITOR_MIN_CLEAR,
   };
 }
 
@@ -67,7 +72,7 @@ export async function runAnalysis(
   const reading = monitorReading(out.result, metric);
   const note = out.result.warnings.length ? out.result.warnings.join("; ").slice(0, 1000) : undefined;
   const check = await recordMonitorCheck({
-    monitorId: a.monitorId, value: reading.value, sceneDate: reading.scene_date, sceneId: reading.scene_id, note, actor,
+    monitorId: a.monitorId, value: reading.value, sceneDate: reading.scene_date, sceneId: reading.scene_id, clearScene: reading.clear_scene, note, actor,
   });
   return { mode: "monitor" as const, monitor_id: a.monitorId, metric, reading, result: summary(out.result), check, timings_s: out.timings };
 }

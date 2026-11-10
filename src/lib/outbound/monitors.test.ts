@@ -92,11 +92,19 @@ describe("recordMonitorCheck", () => {
     expect(mon).toEqual({ d: "2026-11-01", v: 0.1 });
   });
 
-  it("a new clear scene for an emailed prospect goes to comms-outreach and is visible to list_followups", async () => {
+  it("a new clear scene alone is not news to a prospect: no follow-up below the threshold", async () => {
     const pro = await seedProspect(db, { status: "emailed", channel: "email_warm" });
     const m = await seedMonitor({}, { prospect_id: pro, is_free_sample: true, source: "signal" });
     const res = await recordMonitorCheck({ monitorId: m.id, value: 0.12, sceneDate: "2026-11-08", actor: "analytics" });
-    expect(res).toMatchObject({ new_scene: true, crossed_threshold: false, followup_to: "comms-outreach" });
+    expect(res).toMatchObject({ new_scene: true, crossed_threshold: false, followup_request_id: null, reason: expect.stringMatching(/threshold/) });
+    expect(mocks.handoff).not.toHaveBeenCalled();
+  });
+
+  it("a change over the threshold for an emailed prospect goes to comms-outreach and is visible to list_followups", async () => {
+    const pro = await seedProspect(db, { status: "emailed", channel: "email_warm" });
+    const m = await seedMonitor({}, { prospect_id: pro, is_free_sample: true, source: "signal" });
+    const res = await recordMonitorCheck({ monitorId: m.id, value: 0.45, sceneDate: "2026-11-08", actor: "analytics" });
+    expect(res).toMatchObject({ new_scene: true, crossed_threshold: true, followup_to: "comms-outreach" });
     expect(mocks.handoff).toHaveBeenCalledWith(expect.objectContaining({ to: "comms-outreach", stage: "outreach" }));
     const [ev] = await db.query<{ payload: { prospect_id: string; new_info: string } }>("SELECT payload FROM events WHERE type = 'monitor.followup'");
     expect(ev.payload.prospect_id).toBe(pro);

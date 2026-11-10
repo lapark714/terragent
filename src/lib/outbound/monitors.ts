@@ -156,6 +156,11 @@ export async function recordMonitorCheck(a: {
   }
 
   const target = await followupTarget(parent ?? null);
+  // A prospect hasn't asked us anything: a new image alone is not news to them. Only a change over the threshold is.
+  if (target.to === "comms-outreach" && !crossed) {
+    await logDecision({ requestId: m.request_id, kind: "monitoring", choice: "no follow-up", reasoning: `${facts}. Prospects hear back only about a change over the threshold.`, agent: a.actor });
+    return { ...result, reason: "prospect follow-ups need a change over the threshold" };
+  }
   if (!target.to || !parent) {
     await logDecision({ requestId: m.request_id, kind: "monitoring", choice: "new information, no follow-up", reasoning: `${facts}. ${target.why}`, agent: a.actor });
     return { ...result, reason: target.why };

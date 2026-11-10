@@ -18,7 +18,7 @@ const requestId = z.string().describe("req_… id");
 const FINISHERS: Partial<Record<RequestStatus, readonly AgentName[]>> = {
   delivered: [],
   refused: [],
-  cancelled: ["coordinator", "comms-customer", "comms-outreach"],
+  cancelled: ["coordinator", "comms-customer", "comms-outreach", "acquisition"],
   failed: ["coordinator"],
 };
 const VIA_TOOL: Partial<Record<RequestStatus, string>> = { delivered: "deliver_report", refused: "record_screening (allowed=false)" };
@@ -28,6 +28,10 @@ export function register(r: ToolRegistrar): void {
 
   r.tool("set_status", { request_id: requestId, status: RequestStatus, note: z.string().max(1000).optional() }, async (a, ctx) => {
     const allowed = FINISHERS[a.status];
+    // Acquisition may close only a free sample whose imagery doesn't exist yet; a customer request waits on a person.
+    if (a.status === "cancelled" && ctx.agent === "acquisition" && !(await requireRequest(a.request_id)).is_free_sample) {
+      return { error: "Acquisition can cancel only a free sample. For a customer request, add a note and hand off to coordinator." };
+    }
     if (allowed && !allowed.includes(ctx.agent)) {
       return { error: VIA_TOOL[a.status] ? `Only ${VIA_TOOL[a.status]} sets ${a.status}.` : `Only ${allowed.join(" or ")} can set ${a.status}; add a note and hand off to coordinator.` };
     }

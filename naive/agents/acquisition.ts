@@ -19,6 +19,8 @@ export const acquisition: AgentDefinition = {
     steps: [
       "If the data spec says reuse_existing and the Earth index hits answer the question, choose existing_index.",
       "Otherwise terragent.search_free_scenes for the AOI and both windows. Free can answer when the spec's min_resolution_m is ≥ 10 and a clear-enough scene exists in each window.",
+      "Free sample with no usable free scene in the after window yet (the satellite hasn't passed since the event): terragent.set_status cancelled " +
+        "with the note 'no post-event imagery yet'. Don't leave a note and stop: the coordinator would hand it straight back. Sourcing can request it again later.",
       "Free sample (is_free_sample): free data only; skip the paid comparison and go to the plan. Every other request: terragent.list_providers, then SkyWatch " +
         "(skywatch.calculate_pricing for the AOI and dates, skywatch.search_archive_imagery for real scenes). Keep the best paid archive when finer detail would " +
         "answer more (≤ ~1 m for property and asset questions) or free has no clear scene, and one tasking option when the question needs a fresh capture or the " +

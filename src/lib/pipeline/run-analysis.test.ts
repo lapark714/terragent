@@ -79,6 +79,10 @@ describe("run_analysis", () => {
     const r = sampleAnalysis();
     expect(monitorReading(r, "dnbr_mean")).toMatchObject({ index: "dnbr", value: 0.174 });
     expect(monitorReading(r, "nbr_after_mean")).toMatchObject({ index: "nbr", value: 0.052 });
-    expect(monitorReading(sampleAnalysis({ after: null }), "dnbr_mean")).toEqual({ index: "dnbr", value: null, scene_date: null, scene_id: undefined });
+    expect(monitorReading(sampleAnalysis({ after: null }), "dnbr_mean")).toEqual({ index: "dnbr", value: null, scene_date: null, scene_id: undefined, clear_scene: false });
+    const cloudy = sampleAnalysis();
+    cloudy.after = { ...cloudy.after!, clear_fraction: 0.02 };
+    expect(monitorReading(cloudy, "dnbr_mean").clear_scene).toBe(false); // Frigol, 2026-11-08: 98% cloud read as a new clear scene
+    expect(monitorReading(sampleAnalysis(), "dnbr_mean").clear_scene).toBe(true);
   });
 });
