@@ -4,7 +4,7 @@
  * coordinates or a map link, or tap the globe to drop a pin. The camera flies down to the spot, swaps to
  * real Sentinel-2 imagery, and the details sheet asks the rest.
  */
-import { useCallback, useRef, useState, useSyncExternalStore } from "react";
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import type { LatLng } from "./coords";
 import { AskSheet } from "./AskSheet";
 import { coordsPlace, reverse, type Place } from "./geocode";
@@ -86,6 +86,16 @@ export function GlobeAsk({ hello, demo = false }: { hello: string; demo?: boolea
   }, []);
 
   const details = phase === "details";
+
+  // While the ask sheet is open, <html data-asking> lets the site header step out of its way (SiteHeader).
+  useEffect(() => {
+    const root = document.documentElement;
+    if (details) root.dataset.asking = "";
+    else delete root.dataset.asking;
+    return () => {
+      delete root.dataset.asking;
+    };
+  }, [details]);
 
   return (
     <section aria-label="Ask about a place" className="relative isolate h-[100svh] min-h-[600px] overflow-hidden bg-space">
