@@ -1,3 +1,10 @@
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/logo-white.png">
+    <img src="docs/assets/logo-ink.png" alt="Terragent" width="420">
+  </picture>
+</p>
+
 # Terragent
 
 **Ask about any place on Earth, or we'll come to you with the answer.**
