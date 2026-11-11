@@ -9,7 +9,7 @@
 
 **Ask about any place on Earth, or we'll come to you with the answer.**
 
-An Earth intelligence company run by AI agents. Built at the Naïve Autonomous Company Hackathon at YC (November 7 to 8, 2026).
+An Earth intelligence company run by AI agents. Built at the Naïve Autonomous Company Hackathon at YC (November 7 to 8, 2026), where it won 2nd place in the Monid track.
 
 > **Demo video:** https://www.youtube.com/watch?v=qCh-7TWc7S0
 >
